@@ -9,13 +9,24 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { basename, extname } from 'node:path'
-import 'dotenv/config'
+import { config } from 'dotenv'
+
+// dotenv 는 기본으로 .env 만 읽는다. .env.local 을 먼저 보게 명시한다
+config({ path: ['.env.local', '.env'], quiet: true })
 
 import { GeminiReader } from '../lib/reader/gemini.js'
 import type { ReadResult } from '../lib/reader/index.js'
 import template from '../lib/templates/toc-result.json' with { type: 'json' }
 
 const CACHE_DIR = '.cache'
+
+/**
+ * 100만 토큰당 달러. gemini-3.6-flash 도입 가격 기준.
+ * 2027년 1월부터 오르므로 그때 고칠 것.
+ * 무료 티어를 쓰는 동안에는 실제로 청구되지 않는다. 유료로 갈지 판단하려고 찍는다.
+ */
+const PRICE = { in: 0.75, out: 3.75 }
+const KRW = 1400
 
 /** 확장자 → 형식. 사진 한 장으로도 되고 여러 쪽짜리 PDF 로도 된다 */
 const MIME: Record<string, string> = {
@@ -61,13 +72,17 @@ async function main() {
     process.exit(1)
   }
 
-  const key = process.env.GEMINI_API_KEY
+  const key = process.env.GEMINI_API_KEY?.trim()
   if (!key) {
-    console.error('GEMINI_API_KEY 가 없습니다. .env.local 을 만들고 키를 넣으세요.')
+    console.error('GEMINI_API_KEY 가 비어 있습니다.')
+    console.error(`  파일:  ${process.cwd()}\\.env.local`)
+    console.error('  형식:  GEMINI_API_KEY=AIzaSy...   (따옴표 · 공백 없이)')
+    console.error(`  존재:  ${existsSync('.env.local') ? '파일은 있습니다' : '파일이 없습니다'}`)
     process.exit(1)
   }
 
-  const model = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash'
+  // ?? 는 빈 문자열을 통과시킨다. .env 에 GEMINI_MODEL= 만 있으면 ''  가 되므로 || 를 쓴다
+  const model = process.env.GEMINI_MODEL?.trim() || 'gemini-3.6-flash'
   const bytes = new Uint8Array(readFileSync(file))
 
   const mimeType = MIME[extname(file).toLowerCase()]
@@ -147,6 +162,15 @@ function report(result: ReadResult) {
   if (result.notes.length) {
     console.log('\n모델이 남긴 메모')
     for (const n of result.notes) console.log(`  · ${n}`)
+  }
+
+  if (result.usage) {
+    const { inputTokens, outputTokens } = result.usage
+    const usd = (inputTokens * PRICE.in + outputTokens * PRICE.out) / 1_000_000
+    console.log(
+      `\n토큰  입력 ${inputTokens.toLocaleString()} · 출력 ${outputTokens.toLocaleString()}` +
+        `   유료 기준 약 ${Math.round(usd * KRW)}원`,
+    )
   }
 }
 

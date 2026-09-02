@@ -36,7 +36,7 @@ export class GeminiReader implements Reader {
   #ai: GoogleGenAI
   #model: string
 
-  constructor(apiKey: string, model = 'gemini-2.5-flash') {
+  constructor(apiKey: string, model = 'gemini-3.6-flash') {
     this.#ai = new GoogleGenAI({ apiKey })
     this.#model = model
     this.id = `gemini:${model}`
@@ -74,6 +74,16 @@ export class GeminiReader implements Reader {
       notes: string[]
     }
 
-    return { templateId: 'toc-result', rows: parsed.rows, notes: parsed.notes }
+    const u = res.usageMetadata
+    return {
+      templateId: 'toc-result',
+      rows: parsed.rows,
+      notes: parsed.notes,
+      usage: {
+        inputTokens: u?.promptTokenCount ?? 0,
+        // 생각하는 토큰도 과금되므로 함께 센다
+        outputTokens: (u?.candidatesTokenCount ?? 0) + (u?.thoughtsTokenCount ?? 0),
+      },
+    }
   }
 }

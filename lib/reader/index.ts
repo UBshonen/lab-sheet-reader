@@ -16,12 +16,19 @@ export type ReadRow = {
   cells: Record<string, string | null>
 }
 
+/** 실제로 얼마나 썼는지. 유료 전환 판단의 근거가 된다 */
+export type Usage = {
+  inputTokens: number
+  outputTokens: number
+}
+
 export type ReadResult = {
   /** 어떤 템플릿으로 읽었는지 */
   templateId: string
   rows: ReadRow[]
   /** 모델이 스스로 애매하다고 표시한 것 */
   notes: string[]
+  usage?: Usage
 }
 
 export type ReadRequest = {
