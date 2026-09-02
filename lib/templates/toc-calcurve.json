@@ -1,0 +1,10 @@
+{
+  "id": "toc-calcurve",
+  "name": "TOC 분석기 검량선",
+  "purpose": "skip",
+  "hint": "제목이 TOC-L Cal Curve Information. Conc: 0.000mg/L 같은 농도 구간별 Area 표가 반복된다. 시료명이 없다",
+  "columns": [],
+  "instruction": [],
+  "maps": [],
+  "qc": []
+}

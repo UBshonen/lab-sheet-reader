@@ -1,32 +1,26 @@
 /**
- * 판독이 되는지만 확인하는 스크립트. 화면 없음.
+ * 판독이 되는지 확인하는 스크립트. 화면 없음.
  *
- *   npm run read -- samples/toc.pdf
+ *   npm run read -- samples/            폴더 전체
+ *   npm run read -- samples/a.jpg b.jpg  개별
  *
+ * 파일마다 무슨 문서인지 먼저 판별하고, 읽을 것만 읽는다.
  * 같은 파일을 다시 부르면 API 를 호출하지 않고 캐시에서 읽는다.
- * 개발 중에 같은 스캔본을 수십 번 돌리게 되므로 이게 비용의 대부분을 막는다.
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { basename, extname } from 'node:path'
+import { basename, extname, join } from 'node:path'
 import { config } from 'dotenv'
 
 // dotenv 는 기본으로 .env 만 읽는다. .env.local 을 먼저 보게 명시한다
 config({ path: ['.env.local', '.env'], quiet: true })
 
 import { GeminiReader } from '../lib/reader/gemini.js'
-import type { ReadResult } from '../lib/reader/index.js'
-import template from '../lib/templates/toc-result.json' with { type: 'json' }
+import type { Source, DetectResult, ReadResult, Usage } from '../lib/reader/index.js'
+import { TEMPLATES, findTemplate, type Template } from '../lib/templates/index.js'
+import { checkQc } from '../lib/qc.js'
 
 const CACHE_DIR = '.cache'
-
-/**
- * 100만 토큰당 달러. gemini-3.6-flash 도입 가격 기준.
- * 2027년 1월부터 오르므로 그때 고칠 것.
- * 무료 티어를 쓰는 동안에는 실제로 청구되지 않는다. 유료로 갈지 판단하려고 찍는다.
- */
-const PRICE = { in: 0.75, out: 3.75 }
-const KRW = 1400
 
 /** 확장자 → 형식. 사진 한 장으로도 되고 여러 쪽짜리 PDF 로도 된다 */
 const MIME: Record<string, string> = {
@@ -37,38 +31,57 @@ const MIME: Record<string, string> = {
   '.webp': 'image/webp',
 }
 
-const INSTRUCTION = `
-이 문서는 수질 시험 기기가 출력한 표다. 표의 모든 줄을 위에서 아래 순서 그대로 읽어라.
+/**
+ * 100만 토큰당 달러. gemini-3.6-flash 도입 가격 기준.
+ * 2027년 1월부터 오르므로 그때 고칠 것.
+ * 무료 티어에서는 청구되지 않는다. 유료로 갈지 판단하려고 찍는다.
+ */
+const PRICE = { in: 0.75, out: 3.75 }
+const KRW = 1400
 
-각 줄에서 뽑을 것:
-  no      맨 왼쪽에 인쇄된 번호. 비어 있으면 null
-  name    시료명 칸의 글자를 보이는 그대로. 해석하거나 고치지 마라
-  cells.dilu    희석(Manual Dilu) 칸의 값
-  cells.result  결과(Result) 칸의 값을 통째로. 예: "NPOC:2.550mg/L"
-
-지켜야 할 것:
-  - 번호는 비연속일 수 있다. 순서를 임의로 메우지 마라
-  - 시료명이 "유출" 처럼 짧아도 앞줄에서 추측해 채우지 마라. 보이는 대로 적어라
-  - 값이 어느 줄에 속하는지 애매하면 notes 에 그 줄 번호와 이유를 적어라
-  - 읽을 수 없는 칸은 null 로 두어라. 그럴듯한 값을 지어내지 마라
-`.trim()
-
-function cacheKey(bytes: Uint8Array, model: string) {
-  const h = createHash('sha256')
-  h.update(bytes)
-  h.update(model)
-  h.update(INSTRUCTION)
-  return h.digest('hex').slice(0, 16)
+function cached<T>(path: string, make: () => Promise<T>): Promise<T> {
+  if (existsSync(path)) return Promise.resolve(JSON.parse(readFileSync(path, 'utf8')) as T)
+  return make().then((v) => {
+    writeFileSync(path, JSON.stringify(v, null, 2), 'utf8')
+    return v
+  })
 }
 
-async function main() {
-  const file = process.argv[2]
-  if (!file) {
-    console.error('사용법: npm run read -- <파일경로>')
-    process.exit(1)
+function keyOf(bytes: Uint8Array, ...parts: string[]) {
+  const h = createHash('sha256')
+  h.update(bytes)
+  for (const p of parts) h.update(p)
+  return h.digest('hex').slice(0, 12)
+}
+
+/** 인자가 폴더면 안의 파일을 전부, 파일이면 그것만 */
+function collect(args: string[]): string[] {
+  const out: string[] = []
+  for (const a of args) {
+    if (!existsSync(a)) {
+      console.error(`없는 경로: ${a}`)
+      continue
+    }
+    if (statSync(a).isDirectory()) {
+      for (const f of readdirSync(a).sort()) {
+        if (MIME[extname(f).toLowerCase()]) out.push(join(a, f))
+      }
+    } else if (MIME[extname(a).toLowerCase()]) {
+      out.push(a)
+    } else {
+      console.error(`읽을 수 없는 형식: ${a}`)
+    }
   }
-  if (!existsSync(file)) {
-    console.error(`파일이 없습니다: ${file}`)
+  return out
+}
+
+const money = (u: Usage) =>
+  Math.round(((u.inputTokens * PRICE.in + u.outputTokens * PRICE.out) / 1_000_000) * KRW)
+
+async function main() {
+  const args = process.argv.slice(2)
+  if (!args.length) {
+    console.error('사용법: npm run read -- <파일 또는 폴더> [...]')
     process.exit(1)
   }
 
@@ -76,101 +89,118 @@ async function main() {
   if (!key) {
     console.error('GEMINI_API_KEY 가 비어 있습니다.')
     console.error(`  파일:  ${process.cwd()}\\.env.local`)
-    console.error('  형식:  GEMINI_API_KEY=AIzaSy...   (따옴표 · 공백 없이)')
-    console.error(`  존재:  ${existsSync('.env.local') ? '파일은 있습니다' : '파일이 없습니다'}`)
     process.exit(1)
   }
 
-  // ?? 는 빈 문자열을 통과시킨다. .env 에 GEMINI_MODEL= 만 있으면 ''  가 되므로 || 를 쓴다
+  const files = collect(args)
+  if (!files.length) {
+    console.error('읽을 파일이 없습니다.')
+    process.exit(1)
+  }
+
   const model = process.env.GEMINI_MODEL?.trim() || 'gemini-3.6-flash'
-  const bytes = new Uint8Array(readFileSync(file))
-
-  const mimeType = MIME[extname(file).toLowerCase()]
-  if (!mimeType) {
-    console.error(`읽을 수 없는 형식입니다: ${extname(file)}`)
-    console.error(`쓸 수 있는 것: ${Object.keys(MIME).join(' ')}`)
-    process.exit(1)
-  }
-
+  const reader = new GeminiReader(key, model)
   if (!existsSync(CACHE_DIR)) mkdirSync(CACHE_DIR, { recursive: true })
-  const cachePath = `${CACHE_DIR}/${basename(file)}.${cacheKey(bytes, model)}.json`
 
-  let result: ReadResult
-  if (existsSync(cachePath)) {
-    console.log(`캐시에서 읽음  ${cachePath}\n`)
-    result = JSON.parse(readFileSync(cachePath, 'utf8')) as ReadResult
-  } else {
-    console.log(`판독 중  ${file}  (${model})\n`)
-    const started = Date.now()
-    result = await new GeminiReader(key, model).read({ bytes, mimeType, instruction: INSTRUCTION })
-    console.log(`${((Date.now() - started) / 1000).toFixed(1)}초\n`)
-    writeFileSync(cachePath, JSON.stringify(result, null, 2), 'utf8')
+  console.log(`${files.length}개 파일 · ${model}\n`)
+
+  const totals: Usage = { inputTokens: 0, outputTokens: 0 }
+  const add = (u?: Usage) => {
+    if (!u) return
+    totals.inputTokens += u.inputTokens
+    totals.outputTokens += u.outputTokens
   }
 
-  report(result)
-}
+  for (const file of files) {
+    const bytes = new Uint8Array(readFileSync(file))
+    const src: Source = { bytes, mimeType: MIME[extname(file).toLowerCase()]! }
+    const tag = basename(file)
 
-/** QC 시료가 제자리에 있는지로 정렬이 맞는지 판정한다. */
-function report(result: ReadResult) {
-  const num = (s: string | null | undefined) => {
-    if (!s) return null
-    const m = s.match(/[0-9]*\.?[0-9]+/)
-    return m ? Number(m[0]) : null
-  }
+    // 1단계 · 무슨 문서인가. 출력이 짧아 값이 거의 안 붙는다
+    const det = await cached<DetectResult>(
+      `${CACHE_DIR}/${tag}.${keyOf(bytes, model, 'detect')}.json`,
+      () => reader.detect(src, TEMPLATES),
+    )
+    add(det.usage)
 
-  console.log(`${'번호'.padEnd(6)}${'시료명'.padEnd(24)}${'결과'.padStart(12)}   판정`)
-  console.log('─'.repeat(64))
+    const template = det.templateId ? findTemplate(det.templateId) : undefined
 
-  let qcTotal = 0
-  let qcPass = 0
-
-  for (const row of result.rows) {
-    const value = num(row.cells.result)
-    const rule = template.qc.find((q) => new RegExp(q.match).test(row.name.trim()))
-
-    let verdict = ''
-    if (rule?.expect) {
-      qcTotal++
-      const e = rule.expect as { max?: number; near?: number; tol?: number }
-      const ok =
-        value !== null &&
-        (e.max !== undefined
-          ? value <= e.max
-          : e.near !== undefined && Math.abs(value - e.near) <= (e.tol ?? 0))
-      if (ok) qcPass++
-      verdict = `${rule.label} ${ok ? '통과' : '어긋남'}`
-    } else if (rule) {
-      verdict = rule.label
+    if (!template) {
+      console.log(`■ ${tag}`)
+      console.log(`  알아보지 못했습니다 — ${det.reason}\n`)
+      continue
     }
 
+    if (template.purpose === 'skip') {
+      console.log(`■ ${tag}`)
+      console.log(`  ${template.name} · 건너뜀\n`)
+      continue
+    }
+
+    // 2단계 · 고른 템플릿의 지시문으로 정밀 판독
+    const res = await cached<ReadResult>(
+      `${CACHE_DIR}/${tag}.${keyOf(bytes, model, 'read', template.id)}.json`,
+      () => reader.read(src, template),
+    )
+    add(res.usage)
+
+    console.log(`■ ${tag}`)
+    console.log(`  ${template.name}`)
+    report(res, template)
+    console.log()
+  }
+
+  console.log('─'.repeat(72))
+  console.log(
+    `합계  입력 ${totals.inputTokens.toLocaleString()} · 출력 ${totals.outputTokens.toLocaleString()}` +
+      `   유료 기준 약 ${money(totals)}원`,
+  )
+}
+
+function report(res: ReadResult, template: Template) {
+  const qc = checkQc(res.rows, template)
+  const byRow = new Map(qc.verdicts.map((v) => [v.row, v]))
+  const cols = template.columns.slice(0, 3)
+
+  const head =
+    '  ' +
+    '번호'.padEnd(6) +
+    '시료명'.padEnd(22) +
+    cols.map((c) => c.label.padStart(11)).join('') +
+    '   판정'
+  console.log(head)
+  console.log('  ' + '─'.repeat(70))
+
+  for (const row of res.rows) {
+    const v = byRow.get(row)
+    const mark = v ? (v.ok === null ? `${v.rule.label}` : `${v.rule.label} ${v.ok ? '통과' : '어긋남'}`) : ''
     console.log(
-      `${(row.no ?? '-').padEnd(6)}${row.name.slice(0, 22).padEnd(24)}${(row.cells.result ?? '-').padStart(12)}   ${verdict}`,
+      '  ' +
+        (row.no ?? '-').padEnd(6) +
+        row.name.slice(0, 20).padEnd(22) +
+        cols.map((c) => (row.cells[c.key] ?? '-').slice(0, 10).padStart(11)).join('') +
+        `   ${mark}`,
     )
   }
 
-  console.log('─'.repeat(64))
-  console.log(`${result.rows.length}행 읽음`)
+  console.log('  ' + '─'.repeat(70))
+  const real = res.rows.length - qc.verdicts.length
+  console.log(`  ${res.rows.length}행 · 시료 ${real} · 품질관리 ${qc.verdicts.length}`)
 
-  if (qcTotal === 0) {
-    console.log('품질관리 시료를 못 찾았습니다. 정렬을 검증할 근거가 없습니다.')
-  } else if (qcPass === qcTotal) {
-    console.log(`정렬 확인됨 — 품질관리 시료 ${qcTotal}개가 모두 제자리`)
+  if (qc.aligned === null) {
+    console.log('  품질관리 시료가 없어 정렬을 검증할 근거가 없습니다')
+  } else if (qc.aligned) {
+    console.log(`  정렬 확인됨 — 검사한 ${qc.checked}개가 모두 제자리`)
   } else {
-    console.log(`정렬 의심 — 품질관리 시료 ${qcTotal}개 중 ${qcTotal - qcPass}개가 어긋남`)
+    console.log(`  정렬 의심 — ${qc.checked}개 중 ${qc.checked - qc.passed}개가 어긋남`)
+    for (const v of qc.verdicts.filter((x) => x.ok === false)) {
+      console.log(`    · ${v.row.name}  ${v.detail}`)
+    }
   }
 
-  if (result.notes.length) {
-    console.log('\n모델이 남긴 메모')
-    for (const n of result.notes) console.log(`  · ${n}`)
-  }
-
-  if (result.usage) {
-    const { inputTokens, outputTokens } = result.usage
-    const usd = (inputTokens * PRICE.in + outputTokens * PRICE.out) / 1_000_000
-    console.log(
-      `\n토큰  입력 ${inputTokens.toLocaleString()} · 출력 ${outputTokens.toLocaleString()}` +
-        `   유료 기준 약 ${Math.round(usd * KRW)}원`,
-    )
+  if (res.notes.length) {
+    console.log('  모델이 남긴 메모')
+    for (const n of res.notes) console.log(`    · ${n}`)
   }
 }
 

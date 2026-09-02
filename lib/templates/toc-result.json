@@ -1,28 +1,29 @@
 {
   "id": "toc-result",
-  "name": "TOC 분석기 결과",
+  "name": "TOC 분석기 결과표",
   "purpose": "read",
-
-  "detect": { "allOf": ["NPOC", "Manual Dilu"] },
+  "hint": "맨 위에 .tlx 파일 경로. 표 머리가 Analysis / Sample Name / Manual Dilu / Result",
 
   "columns": [
-    { "key": "no",     "label": "번호",   "type": "int" },
-    { "key": "name",   "label": "시료명", "type": "text" },
-    { "key": "dilu",   "label": "희석",   "type": "number" },
-    { "key": "result", "label": "결과",   "type": "number",
-      "extract": "NPOC:([0-9.]+)mg/L" }
+    { "key": "dilu",   "label": "희석" },
+    { "key": "result", "label": "결과" }
+  ],
+
+  "instruction": [
+    "표의 모든 줄을 위에서 아래 순서 그대로 읽어라.",
+    "",
+    "  no            맨 왼쪽 번호",
+    "  name          Sample Name 칸의 글자를 보이는 그대로",
+    "  cells.dilu    Manual Dilu 칸의 값",
+    "  cells.result  Result 칸의 값을 통째로. 예: \"NPOC:2.550mg/L\""
   ],
 
   "maps": [{ "item": "TOC", "from": "result" }],
 
   "qc": [
-    { "match": "^[wWB]$",       "expect": { "max": 0.2 },  "label": "세척수" },
-    { "match": "^s-blank$",     "expect": { "max": 0.2 },  "label": "바탕시료" },
-    { "match": "^STRE",         "expect": { "near": 5, "tol": 0.5 }, "label": "표준품" },
-    { "match": "^NPOC 0 ?~",    "expect": null,            "label": "검량선 이름" }
-  ],
-
-  "rules": [
-    { "type": "inheritPlace", "when": "^(유출|방류)$" }
+    { "match": "^[wWB]$",    "expect": { "max": 0.2 },            "label": "세척수" },
+    { "match": "^s-blank$",  "expect": { "max": 0.2 },            "label": "바탕시료" },
+    { "match": "^STRE",      "expect": { "near": 5, "tol": 0.5 }, "label": "표준품" },
+    { "match": "^NPOC 0 ?~", "expect": null,                      "label": "검량선 이름" }
   ]
 }

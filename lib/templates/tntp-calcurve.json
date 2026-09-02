@@ -1,0 +1,10 @@
+{
+  "id": "tntp-calcurve",
+  "name": "자동분석기 검량선",
+  "purpose": "skip",
+  "hint": "제목이 Calibration (날짜) - T-N 또는 T-P. Calculation model: Linear 과 OD 그래프가 있다",
+  "columns": [],
+  "instruction": [],
+  "maps": [],
+  "qc": []
+}

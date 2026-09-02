@@ -1,0 +1,37 @@
+{
+  "id": "field-meter",
+  "name": "현장측정기 출력",
+  "purpose": "read",
+  "hint": "노란 머리글에 Filename / Model / Revision / Site name. 표 머리가 Date / Time / Temp C / pH / DO mg/L / SpCond uS",
+
+  "columns": [
+    { "key": "temp",   "label": "수온" },
+    { "key": "ph",     "label": "pH" },
+    { "key": "do",     "label": "DO" },
+    { "key": "spcond", "label": "전도도" }
+  ],
+
+  "instruction": [
+    "표의 모든 줄을 위에서 아래 순서 그대로 읽어라.",
+    "",
+    "  no            없다. null 로 두어라",
+    "  name          맨 왼쪽 칸의 글자를 보이는 그대로",
+    "  cells.temp    Temp C 칸",
+    "  cells.ph      pH 칸",
+    "  cells.do      DO mg/L 칸",
+    "  cells.spcond  SpCond uS 칸"
+  ],
+
+  "maps": [
+    { "item": "pH", "from": "ph" },
+    { "item": "DO", "from": "do" }
+  ],
+
+  "qc": [
+    { "match": "^pH ?4",    "expect": { "near": 4,  "tol": 0.2, "column": "ph" }, "label": "pH 표준액" },
+    { "match": "^pH ?7",    "expect": { "near": 7,  "tol": 0.2, "column": "ph" }, "label": "pH 표준액" },
+    { "match": "^pH ?10",   "expect": { "near": 10, "tol": 0.2, "column": "ph" }, "label": "pH 표준액" },
+    { "match": "^EC ?1000", "expect": null, "label": "전도도 표준액" },
+    { "match": "^DO$",      "expect": null, "label": "DO 보정" }
+  ]
+}
