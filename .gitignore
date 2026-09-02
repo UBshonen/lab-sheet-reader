@@ -37,3 +37,6 @@ Thumbs.db
 # 타입스크립트
 *.tsbuildinfo
 next-env.d.ts
+
+# 판독 결과 캐시
+.cache/

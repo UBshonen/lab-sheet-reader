@@ -1,0 +1,22 @@
+{
+  "name": "lab-sheet-reader",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "read": "tsx scripts/read.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@google/genai": "^2.20.0",
+    "dotenv": "^17.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}

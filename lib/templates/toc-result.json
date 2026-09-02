@@ -1,0 +1,28 @@
+{
+  "id": "toc-result",
+  "name": "TOC 분석기 결과",
+  "purpose": "read",
+
+  "detect": { "allOf": ["NPOC", "Manual Dilu"] },
+
+  "columns": [
+    { "key": "no",     "label": "번호",   "type": "int" },
+    { "key": "name",   "label": "시료명", "type": "text" },
+    { "key": "dilu",   "label": "희석",   "type": "number" },
+    { "key": "result", "label": "결과",   "type": "number",
+      "extract": "NPOC:([0-9.]+)mg/L" }
+  ],
+
+  "maps": [{ "item": "TOC", "from": "result" }],
+
+  "qc": [
+    { "match": "^[wWB]$",       "expect": { "max": 0.2 },  "label": "세척수" },
+    { "match": "^s-blank$",     "expect": { "max": 0.2 },  "label": "바탕시료" },
+    { "match": "^STRE",         "expect": { "near": 5, "tol": 0.5 }, "label": "표준품" },
+    { "match": "^NPOC 0 ?~",    "expect": null,            "label": "검량선 이름" }
+  ],
+
+  "rules": [
+    { "type": "inheritPlace", "when": "^(유출|방류)$" }
+  ]
+}
