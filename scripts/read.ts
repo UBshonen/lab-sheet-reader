@@ -17,6 +17,15 @@ import template from '../lib/templates/toc-result.json' with { type: 'json' }
 
 const CACHE_DIR = '.cache'
 
+/** 확장자 → 형식. 사진 한 장으로도 되고 여러 쪽짜리 PDF 로도 된다 */
+const MIME: Record<string, string> = {
+  '.pdf': 'application/pdf',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+}
+
 const INSTRUCTION = `
 이 문서는 수질 시험 기기가 출력한 표다. 표의 모든 줄을 위에서 아래 순서 그대로 읽어라.
 
@@ -60,7 +69,13 @@ async function main() {
 
   const model = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash'
   const bytes = new Uint8Array(readFileSync(file))
-  const mimeType = extname(file).toLowerCase() === '.pdf' ? 'application/pdf' : 'image/jpeg'
+
+  const mimeType = MIME[extname(file).toLowerCase()]
+  if (!mimeType) {
+    console.error(`읽을 수 없는 형식입니다: ${extname(file)}`)
+    console.error(`쓸 수 있는 것: ${Object.keys(MIME).join(' ')}`)
+    process.exit(1)
+  }
 
   if (!existsSync(CACHE_DIR)) mkdirSync(CACHE_DIR, { recursive: true })
   const cachePath = `${CACHE_DIR}/${basename(file)}.${cacheKey(bytes, model)}.json`
