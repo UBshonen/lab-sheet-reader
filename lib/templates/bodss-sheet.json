@@ -54,5 +54,66 @@
     "  - 확신이 서지 않는 숫자는 notes 에 줄 번호와 함께 적어라"
   ],
   "maps": [],
-  "qc": []
+  "qc": [],
+  "rules": [
+    {
+      "type": "greater",
+      "left": "d1",
+      "right": "d2",
+      "label": "D1 > D2 (용존산소는 배양하면 준다)"
+    },
+    {
+      "type": "greater",
+      "left": "w2",
+      "right": "w1",
+      "label": "여지 후 > 전 (부유물이 쌓인다)"
+    },
+    {
+      "type": "range",
+      "column": "w1",
+      "min": 88,
+      "max": 96,
+      "label": "여지 공무게"
+    },
+    {
+      "type": "oneOf",
+      "column": "bodVol",
+      "values": [
+        "300"
+      ],
+      "label": "BOD 시료량"
+    },
+    {
+      "type": "oneOf",
+      "column": "ssVol",
+      "values": [
+        "500",
+        "1000",
+        "1500",
+        "2000"
+      ],
+      "label": "SS 시료량"
+    },
+    {
+      "type": "range",
+      "column": "filterNo",
+      "min": 1,
+      "max": 200,
+      "label": "여지번호"
+    },
+    {
+      "type": "computed",
+      "expr": "d1-d2",
+      "min": 0,
+      "max": 12,
+      "label": "BOD 값"
+    },
+    {
+      "type": "computed",
+      "expr": "(w2-w1)*1000/ssVol",
+      "min": 0,
+      "max": 60,
+      "label": "SS 값"
+    }
+  ]
 }

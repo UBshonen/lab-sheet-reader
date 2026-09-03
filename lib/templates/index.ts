@@ -20,7 +20,13 @@ export type Template = {
   instruction: string[]
   /** 이 문서의 어느 열이 어느 검사 항목이 되는지 */
   maps: { item: string; from: string }[]
+  /** 품질관리 시료로 정렬을 검증한다. 기기 출력물에만 있다 */
   qc: QcRule[]
+  /**
+   * 정답지 없이 값의 타당성을 본다. 손글씨 일지처럼 QC 가 없는 문서에 쓴다.
+   * 형태는 lib/rules.ts 의 Rule 을 따른다.
+   */
+  rules?: unknown[]
 }
 
 export type QcRule = {

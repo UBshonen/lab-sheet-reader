@@ -19,6 +19,7 @@ import { GeminiReader } from '../lib/reader/gemini.js'
 import type { Source, DetectResult, ReadResult, Usage } from '../lib/reader/index.js'
 import { TEMPLATES, findTemplate, type Template } from '../lib/templates/index.js'
 import { checkQc } from '../lib/qc.js'
+import { checkRules } from '../lib/rules.js'
 
 const CACHE_DIR = '.cache'
 
@@ -187,15 +188,27 @@ function report(res: ReadResult, template: Template) {
   const real = res.rows.length - qc.verdicts.length
   console.log(`  ${res.rows.length}행 · 시료 ${real} · 품질관리 ${qc.verdicts.length}`)
 
-  if (qc.aligned === null) {
-    console.log('  품질관리 시료가 없어 정렬을 검증할 근거가 없습니다')
-  } else if (qc.aligned) {
-    console.log(`  정렬 확인됨 — 검사한 ${qc.checked}개가 모두 제자리`)
-  } else {
+  const bad = checkRules(res.rows, template)
+  if (bad.length) {
+    console.log(`  타당성 위반 ${bad.length}건 — 확인 필요`)
+    for (const v of bad) {
+      const no = v.row.no ? `${v.row.no} ` : ''
+      console.log(`    · ${no}${v.row.name}  ${v.rule.label}:  ${v.detail}`)
+    }
+  } else if ((template.rules?.length ?? 0) > 0) {
+    console.log(`  타당성 규칙 ${template.rules!.length}개 전부 통과`)
+  }
+
+  if (qc.aligned === true) {
+    console.log(`  정렬 확인됨 — 품질관리 시료 ${qc.checked}개가 모두 제자리`)
+  } else if (qc.aligned === false) {
     console.log(`  정렬 의심 — ${qc.checked}개 중 ${qc.checked - qc.passed}개가 어긋남`)
     for (const v of qc.verdicts.filter((x) => x.ok === false)) {
       console.log(`    · ${v.row.name}  ${v.detail}`)
     }
+  } else if ((template.rules?.length ?? 0) === 0) {
+    // QC 도 규칙도 없으면 검증할 근거가 아무것도 없다. 그 사실을 밝혀야 한다
+    console.log('  검증할 근거가 없습니다 — 품질관리 시료도 타당성 규칙도 없음')
   }
 
   if (res.notes.length) {
