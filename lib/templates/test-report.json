@@ -1,0 +1,10 @@
+{
+  "id": "test-report",
+  "name": "시험성적서",
+  "purpose": "skip",
+  "hint": "제목이 시험성적서. 접수번호 / 의뢰자 표 아래에 시료명 × 시험항목(pH DO BOD TOC SS T-N T-P) 표가 있다. 시스템이 만든 문서라 판독 대상이 아니다",
+  "columns": [],
+  "instruction": [],
+  "maps": [],
+  "qc": []
+}

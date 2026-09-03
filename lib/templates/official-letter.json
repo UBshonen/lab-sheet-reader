@@ -1,0 +1,10 @@
+{
+  "id": "official-letter",
+  "name": "공문 (결과알림)",
+  "purpose": "skip",
+  "hint": "기관 로고와 관인이 있는 한 장짜리 공문. 수신 / 제목 / 붙임 이 있고 표가 없다",
+  "columns": [],
+  "instruction": [],
+  "maps": [],
+  "qc": []
+}
