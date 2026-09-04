@@ -21,7 +21,7 @@ type LayoutColumn = { label: string; from?: string; default?: string }
 type LayoutItem = { item: string; range: string; columns: LayoutColumn[] }
 
 const here = dirname(fileURLToPath(import.meta.url))
-const LAYOUT = JSON.parse(readFileSync(join(here, 'heis-layout.json'), 'utf8')) as {
+const LAYOUT = JSON.parse(readFileSync(join(here, 'paste-layout.json'), 'utf8')) as {
   items: LayoutItem[]
 }
 
