@@ -21,7 +21,6 @@ import { TEMPLATES, findTemplate, type Template } from '../lib/templates/index.j
 import { checkQc } from '../lib/qc.js'
 import { checkRules } from '../lib/rules.js'
 import { writeWorkbook } from '../lib/export.js'
-import { fillTemplate } from '../lib/fill.js'
 
 const CACHE_DIR = '.cache'
 
@@ -166,14 +165,6 @@ async function main() {
       console.log(`      ${written.join(' · ')}`)
     }
 
-    // 결과정리 양식이 있으면 거기에도 채워 넣는다. 붙여넣기 없이 파일째로 쓸 수 있다
-    const tpl = process.env.RESULT_TEMPLATE?.trim()
-    if (tpl && existsSync(tpl)) {
-      const filled = outPath.replace(/.xlsx$/, '_양식.xlsx')
-      const { rows, warned } = await fillTemplate(collected, tpl, filled)
-      console.log(`양식  ${filled}`)
-      console.log(`      ${rows}행${warned ? ` (확인 ${warned})` : ''}`)
-    }
   }
 
   console.log('─'.repeat(72))

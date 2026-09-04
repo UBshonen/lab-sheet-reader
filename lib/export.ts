@@ -133,6 +133,22 @@ function hasAny(sample: Sample, item: LayoutItem): boolean {
   })
 }
 
+/** 항목별 머리글 색. 결과정리 양식의 색을 따라가면 눈에 익다 */
+const HEAD_COLOR: Record<string, string> = {
+  BOD: 'FFDDF0DC',
+  SS: 'FFFDF0CE',
+  'T-N': 'FFDCE9F5',
+  'T-P': 'FFDCE9F5',
+  TOC: 'FFEDE3F3',
+  pH: 'FFEDEDED',
+  DO: 'FFEDEDED',
+}
+
+const GREY = 'FF9AA0A6'
+const LINE = 'FFD8DCE0'
+const WARN_BG = 'FFFDF3D6'
+const NAME_BG = 'FFF6F7F8'
+
 export async function writeWorkbook(results: ReadResult[], outPath: string): Promise<string[]> {
   const samples = collect(results)
   const wb = new ExcelJS.Workbook()
@@ -143,18 +159,28 @@ export async function writeWorkbook(results: ReadResult[], outPath: string): Pro
     if (!rows.length) continue
 
     const ws = wb.addWorksheet(item.item)
+    const head = HEAD_COLOR[item.item] ?? 'FFEDEDED'
 
     // 어디에 붙여넣는지를 시트 안에 적어둔다. 나중에 열어도 헷갈리지 않게
     ws.addRow([`결과정리 엑셀의 ${item.range} 열에 붙여넣습니다. 시료명 열은 참고용이니 빼고 복사하세요.`])
-    ws.getRow(1).font = { size: 9, color: { argb: 'FF888888' } }
+    ws.getRow(1).font = { size: 9, color: { argb: GREY } }
     ws.addRow([])
 
     ws.addRow(['시료명', ...item.columns.map((c) => c.label)])
-    const head = ws.getRow(3)
-    head.font = { bold: true }
-    head.eachCell((c) => {
-      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEEEEE' } }
-    })
+    const headRow = ws.getRow(3)
+    headRow.font = { size: 10, bold: true, color: { argb: 'FF3C4043' } }
+    headRow.alignment = { horizontal: 'center', vertical: 'middle' }
+    headRow.height = 20
+    for (let i = 1; i <= item.columns.length + 1; i++) {
+      const c = headRow.getCell(i)
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: i === 1 ? NAME_BG : head } }
+      c.border = {
+        top: { style: 'thin', color: { argb: LINE } },
+        bottom: { style: 'thin', color: { argb: LINE } },
+        left: { style: 'thin', color: { argb: LINE } },
+        right: { style: 'thin', color: { argb: LINE } },
+      }
+    }
 
     // 이 시트가 쓰는 판독 열들. 이 열을 본 경고만 여기 띄운다
     const used = new Set(item.columns.flatMap((c) => (c.from ? [c.from.split('.')[1]!] : [])))
@@ -166,22 +192,36 @@ export async function writeWorkbook(results: ReadResult[], outPath: string): Pro
         return v === null ? null : Number(v)
       })
       const r = ws.addRow([s.name, ...cells])
+      r.height = 18
 
       const mine = s.warnings.filter((w) => w.columns.some((c) => used.has(c)))
+      if (mine.length) warned++
 
-      // 걸린 줄은 노랗게 칠하고 이유를 메모로 남긴다.
-      // 값을 지우지는 않는다. 판독이 틀렸는지 원래 그런지 도구는 모른다
-      if (mine.length) {
-        warned++
-        r.eachCell((c) => {
-          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3C4' } }
-        })
-        r.getCell(1).note = mine.map((w) => w.text).join('\n')
+      for (let i = 1; i <= item.columns.length + 1; i++) {
+        const c = r.getCell(i)
+        c.font = { size: 10 }
+        c.alignment = { horizontal: i === 1 ? 'left' : 'right', vertical: 'middle' }
+        c.border = {
+          top: { style: 'thin', color: { argb: LINE } },
+          bottom: { style: 'thin', color: { argb: LINE } },
+          left: { style: 'thin', color: { argb: LINE } },
+          right: { style: 'thin', color: { argb: LINE } },
+        }
+        // 걸린 줄만 연노랑. 값은 지우지 않는다.
+        // 판독이 틀렸는지 원래 그런지 도구는 모른다
+        if (mine.length) {
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: WARN_BG } }
+        } else if (i === 1) {
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAME_BG } }
+        }
       }
+
+      if (mine.length) r.getCell(1).note = mine.map((w) => w.text).join('\n')
     }
 
-    ws.getColumn(1).width = 22
+    ws.getColumn(1).width = 20
     for (let i = 2; i <= item.columns.length + 1; i++) ws.getColumn(i).width = 11
+    ws.views = [{ state: 'frozen', ySplit: 3 }]
 
     written.push(`${item.item} ${rows.length}행${warned ? ` (확인 ${warned})` : ''}`)
   }
