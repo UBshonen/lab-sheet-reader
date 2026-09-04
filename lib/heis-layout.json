@@ -1,0 +1,74 @@
+{
+  "note": [
+    "결과정리 엑셀의 원자료 칸 배치. 항목마다 시트를 나눠 뱉는다.",
+    "각 시트에서 값 부분만 블록 잡아 복사하면 그대로 붙여넣어진다.",
+    "",
+    "from 은 '템플릿id.열키' 형태로 판독 결과를 가리킨다.",
+    "default 는 문서에 없고 늘 같은 값이다.",
+    "수식 열(결과값·차이·농도·성적용)은 뱉지 않는다. 엑셀이 계산한다."
+  ],
+
+  "items": [
+    {
+      "item": "BOD",
+      "range": "G:J",
+      "columns": [
+        { "label": "D1",     "from": "bodss-sheet.d1" },
+        { "label": "D2",     "from": "bodss-sheet.d2" },
+        { "label": "시료량",  "from": "bodss-sheet.bodVol", "default": "300" },
+        { "label": "희석배수", "default": "1" }
+      ]
+    },
+    {
+      "item": "SS",
+      "range": "L:O",
+      "columns": [
+        { "label": "후무게",  "from": "bodss-sheet.w2" },
+        { "label": "전무게",  "from": "bodss-sheet.w1" },
+        { "label": "시료량",  "from": "bodss-sheet.ssVol" },
+        { "label": "희석배수", "default": "1" }
+      ]
+    },
+    {
+      "item": "T-N",
+      "range": "X:Z",
+      "columns": [
+        { "label": "시료농도", "from": "tntp-result.tn" },
+        { "label": "바탕농도", "default": "0" },
+        { "label": "희석배수", "default": "1" }
+      ]
+    },
+    {
+      "item": "T-P",
+      "range": "AB:AD",
+      "columns": [
+        { "label": "시료농도", "from": "tntp-result.tp" },
+        { "label": "바탕농도", "default": "0" },
+        { "label": "희석배수", "default": "1" }
+      ]
+    },
+    {
+      "item": "TOC",
+      "range": "AN:AP",
+      "columns": [
+        { "label": "농도",    "from": "toc-result.result" },
+        { "label": "바탕",    "default": "0" },
+        { "label": "희석배수", "from": "toc-result.dilu", "default": "1" }
+      ]
+    },
+    {
+      "item": "pH",
+      "range": "AT",
+      "columns": [
+        { "label": "결과값", "from": "field-meter.ph" }
+      ]
+    },
+    {
+      "item": "DO",
+      "range": "AU",
+      "columns": [
+        { "label": "결과값", "from": "field-meter.do" }
+      ]
+    }
+  ]
+}

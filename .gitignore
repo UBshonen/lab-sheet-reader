@@ -40,3 +40,6 @@ next-env.d.ts
 
 # 판독 결과 캐시
 .cache/
+
+# 내보낸 엑셀
+out/

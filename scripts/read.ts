@@ -20,6 +20,7 @@ import type { Source, DetectResult, ReadResult, Usage } from '../lib/reader/inde
 import { TEMPLATES, findTemplate, type Template } from '../lib/templates/index.js'
 import { checkQc } from '../lib/qc.js'
 import { checkRules } from '../lib/rules.js'
+import { writeWorkbook } from '../lib/export.js'
 
 const CACHE_DIR = '.cache'
 
@@ -105,6 +106,7 @@ async function main() {
 
   console.log(`${files.length}개 파일 · ${model}\n`)
 
+  const collected: ReadResult[] = []
   const totals: Usage = { inputTokens: 0, outputTokens: 0 }
   const add = (u?: Usage) => {
     if (!u) return
@@ -144,11 +146,24 @@ async function main() {
       () => reader.read(src, template),
     )
     add(res.usage)
+    collected.push(res)
 
     console.log(`■ ${tag}`)
     console.log(`  ${template.name}`)
     report(res, template)
     console.log()
+  }
+
+  const outArg = args.find((a) => a.endsWith('.xlsx'))
+  const outPath = outArg ?? 'out/결과.xlsx'
+  if (collected.length) {
+    if (!existsSync('out')) mkdirSync('out', { recursive: true })
+    const written = await writeWorkbook(collected, outPath)
+    if (written.length) {
+      console.log('─'.repeat(72))
+      console.log(`엑셀  ${outPath}`)
+      console.log(`      ${written.join(' · ')}`)
+    }
   }
 
   console.log('─'.repeat(72))
