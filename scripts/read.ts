@@ -20,6 +20,7 @@ import type { Source, DetectResult, ReadResult, Usage } from '../lib/reader/inde
 import { TEMPLATES, findTemplate, type Template } from '../lib/templates/index.js'
 import { checkQc } from '../lib/qc.js'
 import { checkRules } from '../lib/rules.js'
+import { prepare } from '../lib/image.js'
 import { writeWorkbook } from '../lib/export.js'
 
 const CACHE_DIR = '.cache'
@@ -81,9 +82,12 @@ const money = (u: Usage) =>
   Math.round(((u.inputTokens * PRICE.in + u.outputTokens * PRICE.out) / 1_000_000) * KRW)
 
 async function main() {
-  const args = process.argv.slice(2)
+  const argv = process.argv.slice(2)
+  const outIdx = argv.indexOf('--out')
+  const outPath = outIdx >= 0 ? argv[outIdx + 1]! : 'out/결과.xlsx'
+  const args = outIdx >= 0 ? [...argv.slice(0, outIdx), ...argv.slice(outIdx + 2)] : argv
   if (!args.length) {
-    console.error('사용법: npm run read -- <파일 또는 폴더> [...]')
+    console.error('사용법: npm run read -- <파일 또는 폴더> [...] [--out 결과.xlsx]')
     process.exit(1)
   }
 
@@ -102,6 +106,8 @@ async function main() {
 
   const model = process.env.GEMINI_MODEL?.trim() || 'gemini-3.6-flash'
   const reader = new GeminiReader(key, model)
+  reader.onRetry = (sec, tries) =>
+    console.log(`  붐벼서 ${sec}초 뒤 다시 시도합니다 (${tries}/3)`)
   if (!existsSync(CACHE_DIR)) mkdirSync(CACHE_DIR, { recursive: true })
 
   console.log(`${files.length}개 파일 · ${model}\n`)
@@ -112,12 +118,17 @@ async function main() {
     if (!u) return
     totals.inputTokens += u.inputTokens
     totals.outputTokens += u.outputTokens
+    totals.answerTokens = (totals.answerTokens ?? 0) + (u.answerTokens ?? 0)
+    totals.thinkingTokens = (totals.thinkingTokens ?? 0) + (u.thinkingTokens ?? 0)
   }
 
   for (const file of files) {
     const bytes = new Uint8Array(readFileSync(file))
-    const src: Source = { bytes, mimeType: MIME[extname(file).toLowerCase()]! }
     const tag = basename(file)
+
+    // 캐시 키는 원본으로 만든다. 줄이는 방식이 바뀌어도 같은 사진은 같은 키다
+    const prepared = await prepare(bytes, MIME[extname(file).toLowerCase()]!)
+    const src: Source = { bytes: prepared.bytes, mimeType: prepared.mimeType }
 
     // 1단계 · 무슨 문서인가. 출력이 짧아 값이 거의 안 붙는다
     const det = await cached<DetectResult>(
@@ -150,12 +161,11 @@ async function main() {
 
     console.log(`■ ${tag}`)
     console.log(`  ${template.name}`)
+    if (prepared.note) console.log(`  이미지 축소  ${prepared.note}`)
     report(res, template)
     console.log()
   }
 
-  const outArg = args.find((a) => a.endsWith('.xlsx'))
-  const outPath = outArg ?? 'out/결과.xlsx'
   if (collected.length) {
     if (!existsSync('out')) mkdirSync('out', { recursive: true })
     const written = await writeWorkbook(collected, outPath)
@@ -170,6 +180,7 @@ async function main() {
   console.log('─'.repeat(72))
   console.log(
     `합계  입력 ${totals.inputTokens.toLocaleString()} · 출력 ${totals.outputTokens.toLocaleString()}` +
+      (totals.thinkingTokens ? ` (답 ${totals.answerTokens!.toLocaleString()} + 생각 ${totals.thinkingTokens.toLocaleString()})` : '') +
       `   유료 기준 약 ${money(totals)}원`,
   )
 }

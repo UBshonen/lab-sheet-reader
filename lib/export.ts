@@ -146,7 +146,10 @@ const HEAD_COLOR: Record<string, string> = {
 
 const GREY = 'FF9AA0A6'
 const LINE = 'FFD8DCE0'
+/** 타당성 규칙에 걸린 줄. 값이 물리적으로 말이 안 된다 */
 const WARN_BG = 'FFFDF3D6'
+/** 모델이 스스로 헷갈린다고 신고한 칸. 값은 그럴듯하지만 확신이 낮다 */
+const SHAKY_BG = 'FFFBE3DA'
 const NAME_BG = 'FFF6F7F8'
 
 export async function writeWorkbook(results: ReadResult[], outPath: string): Promise<string[]> {
@@ -195,7 +198,14 @@ export async function writeWorkbook(results: ReadResult[], outPath: string): Pro
       r.height = 18
 
       const mine = s.warnings.filter((w) => w.columns.some((c) => used.has(c)))
-      if (mine.length) warned++
+
+      // 모델이 스스로 헷갈린다고 신고한 칸. 이 시트가 쓰는 열만 골라낸다
+      const shaky = new Set<string>()
+      for (const row of s.rows.values()) {
+        for (const k of row.uncertain ?? []) if (used.has(k)) shaky.add(k)
+      }
+
+      if (mine.length || shaky.size) warned++
 
       for (let i = 1; i <= item.columns.length + 1; i++) {
         const c = r.getCell(i)
@@ -207,16 +217,26 @@ export async function writeWorkbook(results: ReadResult[], outPath: string): Pro
           left: { style: 'thin', color: { argb: LINE } },
           right: { style: 'thin', color: { argb: LINE } },
         }
-        // 걸린 줄만 연노랑. 값은 지우지 않는다.
-        // 판독이 틀렸는지 원래 그런지 도구는 모른다
-        if (mine.length) {
+
+        // 이 칸이 애매하다고 신고됐나
+        const src = i > 1 ? item.columns[i - 2]?.from?.split('.')[1] : undefined
+        const isShaky = src !== undefined && shaky.has(src)
+
+        // 값은 지우지 않는다. 판독이 틀렸는지 원래 그런지 도구는 모른다
+        if (isShaky) {
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: SHAKY_BG } }
+        } else if (mine.length) {
           c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: WARN_BG } }
         } else if (i === 1) {
           c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAME_BG } }
         }
       }
 
-      if (mine.length) r.getCell(1).note = mine.map((w) => w.text).join('\n')
+      const memo = [
+        ...mine.map((w) => `[타당성] ${w.text}`),
+        ...(shaky.size ? [`[판독] 글씨가 흐려 확신이 낮은 칸: ${[...shaky].join(' · ')}`] : []),
+      ]
+      if (memo.length) r.getCell(1).note = memo.join('\n')
     }
 
     ws.getColumn(1).width = 20

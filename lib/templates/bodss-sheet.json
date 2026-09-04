@@ -71,48 +71,43 @@
     {
       "type": "range",
       "column": "w1",
-      "min": 88,
-      "max": 96,
+      "min": 85,
+      "max": 100,
       "label": "여지 공무게"
     },
     {
-      "type": "oneOf",
+      "type": "range",
       "column": "bodVol",
-      "values": [
-        "300"
-      ],
-      "label": "BOD 시료량"
+      "min": 5,
+      "max": 300,
+      "label": "BOD 시료량 (병이 300mL)"
     },
     {
-      "type": "oneOf",
+      "type": "range",
       "column": "ssVol",
-      "values": [
-        "500",
-        "1000",
-        "1500",
-        "2000"
-      ],
+      "min": 50,
+      "max": 3000,
       "label": "SS 시료량"
     },
     {
       "type": "range",
       "column": "filterNo",
       "min": 1,
-      "max": 200,
+      "max": 300,
       "label": "여지번호"
     },
     {
       "type": "computed",
-      "expr": "d1-d2",
+      "expr": "(d1-d2)*(300/bodVol)",
       "min": 0,
-      "max": 12,
+      "max": 25,
       "label": "BOD 값"
     },
     {
       "type": "computed",
       "expr": "(w2-w1)*1000/ssVol",
       "min": 0,
-      "max": 60,
+      "max": 150,
       "label": "SS 값"
     }
   ]

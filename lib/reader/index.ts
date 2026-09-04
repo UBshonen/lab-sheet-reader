@@ -21,12 +21,22 @@ export type ReadRow = {
   name: string
   /** 열 이름 → 값. 템플릿의 columns 를 따른다 */
   cells: Record<string, string | null>
+  /**
+   * 확신이 서지 않는 칸의 열 이름들.
+   * 모델이 스스로 신고한 것이라, 값은 넣되 사람이 봐야 한다는 표시다.
+   */
+  uncertain?: string[]
 }
 
 /** 실제로 얼마나 썼는지. 유료 전환 판단의 근거가 된다 */
 export type Usage = {
   inputTokens: number
+  /** 답 + 생각. 과금 기준 */
   outputTokens: number
+  /** 실제 답만 */
+  answerTokens?: number
+  /** 생각. 이게 크면 느리다 */
+  thinkingTokens?: number
 }
 
 /** 이 문서가 무엇인지 */
