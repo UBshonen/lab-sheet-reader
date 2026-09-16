@@ -115,7 +115,7 @@ GitHub 저장소       UBshonen/lab-sheet-reader
 프로젝트 이름       lab-sheet-reader
 프로덕션 브랜치     main
 프레임워크 사전 설정 없음(None)
-빌드 명령           exit 0
+빌드 명령           npm ci
 빌드 출력 디렉터리  web
 루트 디렉터리       비워 둠
 ```

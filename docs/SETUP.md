@@ -188,7 +188,7 @@ GitHub의 `main` 브랜치를 Cloudflare Pages에 연결한다.
 ```text
 프로젝트 이름       lab-sheet-reader
 프레임워크           None
-빌드 명령           exit 0
+빌드 명령           npm ci
 출력 디렉터리       web
 루트 디렉터리       비워 둠
 ```
