@@ -19,6 +19,8 @@ let files = []
 let workbook = null
 
 const allowed = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])
+const maxFileBytes = 15 * 1024 * 1024
+const maxTotalBytes = 50 * 1024 * 1024
 
 function formatBytes(bytes) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
@@ -30,13 +32,19 @@ function extension(name) {
 }
 
 function addFiles(next) {
+  const rejected = []
   for (const file of next) {
     if (!allowed.has(file.type)) continue
+    if (file.size > maxFileBytes) {
+      rejected.push(file.name)
+      continue
+    }
     const key = `${file.name}:${file.size}:${file.lastModified}`
     if (!files.some((item) => `${item.name}:${item.size}:${item.lastModified}` === key)) files.push(file)
   }
   files = files.slice(0, 20)
   renderFiles()
+  if (rejected.length) showError(`파일당 15MB 이하만 사용할 수 있습니다: ${rejected.join(', ')}`)
 }
 
 function renderFiles() {
@@ -78,14 +86,35 @@ function renderFiles() {
   totalSize.textContent = `총 ${formatBytes(files.reduce((sum, file) => sum + file.size, 0))}`
 }
 
-async function toBase64(file) {
-  const bytes = new Uint8Array(await file.arrayBuffer())
+async function blobToBase64(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer())
   let binary = ''
   const chunk = 0x8000
   for (let index = 0; index < bytes.length; index += chunk) {
     binary += String.fromCharCode(...bytes.subarray(index, index + chunk))
   }
   return btoa(binary)
+}
+
+async function prepareUpload(file) {
+  if (!file.type.startsWith('image/') || file.size < 1_200_000) {
+    return { mimeType: file.type, data: await blobToBase64(file) }
+  }
+
+  const image = await createImageBitmap(file, { imageOrientation: 'from-image' })
+  const maxEdge = 2048
+  const scale = Math.min(1, maxEdge / Math.max(image.width, image.height))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(image.width * scale))
+  canvas.height = Math.max(1, Math.round(image.height * scale))
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error(`${file.name}: 이미지를 줄일 수 없습니다.`)
+  context.drawImage(image, 0, 0, canvas.width, canvas.height)
+  image.close()
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob((value) => value ? resolve(value) : reject(new Error(`${file.name}: 이미지를 변환할 수 없습니다.`)), 'image/jpeg', 0.88)
+  })
+  return { mimeType: 'image/jpeg', data: await blobToBase64(blob) }
 }
 
 function setBusy(busy) {
@@ -158,14 +187,16 @@ async function processFiles() {
   errorCard.classList.add('hidden')
   results.classList.add('hidden')
   workbook = null
+
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
+  if (totalBytes > maxTotalBytes) {
+    showError('한 번에 올리는 파일의 전체 용량은 50MB 이하여야 합니다.')
+    return
+  }
   setBusy(true)
 
   try {
-    const payload = await Promise.all(files.map(async (file) => ({
-      name: file.name,
-      mimeType: file.type,
-      data: await toBase64(file),
-    })))
+    const payload = await Promise.all(files.map(async (file) => ({ name: file.name, ...await prepareUpload(file) })))
     const response = await fetch('/api/process', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

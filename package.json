@@ -6,6 +6,8 @@
   "scripts": {
     "read": "tsx scripts/read.ts",
     "dev": "tsx scripts/web.ts",
+    "pages:dev": "wrangler pages dev web --env-file=.env.local --show-interactive-dev-session=false",
+    "pages:deploy": "wrangler pages deploy web --project-name lab-sheet-reader",
     "test": "tsx scripts/test-network.ts",
     "typecheck": "tsc --noEmit"
   },
@@ -21,6 +23,7 @@
   "devDependencies": {
     "@types/node": "^26.4.1",
     "tsx": "^4.23.13",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "wrangler": "^4.132.0"
   }
 }

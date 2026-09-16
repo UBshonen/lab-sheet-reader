@@ -6,6 +6,7 @@
 
 ```text
 웹 화면          여러 JPG·PNG·WebP·PDF를 드래그 앤 드롭
+다중 PDF         결과표와 검량선이 한 PDF에 섞여 있어도 결과표 페이지만 사용
 문서 분류        결과표는 사용하고 T-N·T-P 검량선은 제외
 페이지 결합      페이지 경계를 넘는 nDTNP / n 행을 시료번호로 연결
 측정망 정렬      여러 측정 회차에서 1~36을 모아 번호순 정렬
@@ -18,14 +19,20 @@
 서로 다른 두 측정 회차에서 시료 1~36을 모두 채웠다. 35번의
 `DTN 4.521 > TN 3.843`은 값을 바꾸지 않고 확인 대상으로 표시됐다.
 
+같은 자료 중 결과표 3장과 검량선 1장을 4페이지 PDF 하나로 합쳐 Pages
+Functions에서 다시 시험했다. 결과표 106행만 사용해 36개 시료를 모두 채웠고,
+검량선 페이지는 제외했다. 18번처럼 앞뒤 페이지에 나뉜 행도 정상 결합됐다.
+
 ```bash
 npm run dev       # http://localhost:3000
+npm run pages:dev # Cloudflare Pages 로컬 실행
 npm test
 npm run typecheck
 ```
 
-Cloudflare Pages 배포는 아직 하지 않았다. 현재 웹 서버의 API 부분을 Pages
-Functions로 옮기고 Gemini 키를 Pages 환경변수에 넣는 작업이 남았다.
+Cloudflare Pages 배포 구조는 추가했다. 정적 화면은 `web/`, 판독 API는
+`functions/api/`에서 실행한다. 실제 배포 후 Cloudflare Secret
+`GEMINI_API_KEY`를 설정하고 기관 사용자로 접속 시험하는 작업이 남았다.
 
 ## 이전에 왜 멈췄나
 

@@ -118,10 +118,11 @@ copy .env.example .env.local
 그리고 `.env.local` 을 열어 값을 채운다.
 
 ```text
-ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=...
+GEMINI_MODEL=gemini-3.6-flash
 ```
 
-키는 [console.anthropic.com](https://console.anthropic.com) 에서 발급한다.
+키는 Google AI Studio에서 발급한다.
 발급할 때 **월 사용 한도(spend limit)를 낮게 걸어두면** 최악의 경우에도 손해가 막힌다.
 
 ```text
@@ -138,8 +139,9 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 ```powershell
 npm run dev        # localhost:3000
-npx tsc --noEmit   # 타입 검사
-npm run lint
+npm run pages:dev  # Cloudflare Pages 로컬 실행
+npm run typecheck  # 타입 검사
+npm test
 ```
 
 명령 실행 전 `pwd` 로 위치를 확인한다. 엉뚱한 폴더에서 `npm install` 하면
@@ -179,14 +181,20 @@ fixtures/    지점명과 담당자명을 지운 것만.  저장소에 올린다
 
 ---
 
-## 8. 아직 없는 것
+## 8. Cloudflare Pages 배포
 
-지금 저장소에는 문서만 있다. 다음 단계에서 이것들이 생기고,
-생기는 대로 이 문서를 갱신한다.
+GitHub의 `main` 브랜치를 Cloudflare Pages에 연결한다.
 
 ```text
-package.json     아직 없음.  Next.js 뼈대를 세우면 생긴다
-                 그때까지 3번의 npm install 은 할 것이 없다
-배포 설정         Cloudflare Workers.  쓸 만한 게 나온 뒤에
-GitHub 저장소     개인 계정으로 만든다.  회사 계정은 쓰지 않는다
+프로젝트 이름       lab-sheet-reader
+프레임워크           None
+빌드 명령           exit 0
+출력 디렉터리       web
+루트 디렉터리       비워 둠
 ```
+
+첫 배포 뒤 프로젝트의 `설정 → 변수 및 비밀`에서 `GEMINI_API_KEY`를
+암호화된 Secret으로 추가하고 재배포한다. 연구사에게 주소를 공유하기 전에는
+Cloudflare Access로 접근 대상을 제한하고 기관의 외부 AI 전송 기준을 확인한다.
+
+배포 후 GitHub `main`에 push하면 Cloudflare가 새 버전을 자동 배포한다.

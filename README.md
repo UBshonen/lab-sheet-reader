@@ -99,8 +99,38 @@ npm run read -- samples/         # 폴더째 넣어도 된다
 
 웹 화면에서는 JPG·PNG·WebP·PDF 여러 개를 끌어놓을 수 있다. 결과표만 읽고
 검량선은 제외한 뒤, `nDTNP`와 `n` 행을 번호로 연결해 1~36 측정망 엑셀을 만든다.
+여러 페이지 PDF 한 파일 안에 결과표와 검량선이 섞여 있어도 결과표 페이지만 사용한다.
 판독값은 수정하지 않으며 누락·중복·`DTN > TN`·`DTP > TP` 같은 확인 항목은
 화면과 엑셀의 음영으로 표시한다.
+
+### Cloudflare Pages 배포
+
+GitHub 연동 배포용 Pages Functions가 포함되어 있다. 저장소를 GitHub에 push한 뒤
+Cloudflare 대시보드에서 두 번째 Pages 프로젝트로 연결하면 된다.
+
+```text
+Workers 및 Pages → 애플리케이션 생성 → Pages 시작 → Git에 연결
+
+GitHub 저장소       UBshonen/lab-sheet-reader
+프로젝트 이름       lab-sheet-reader
+프로덕션 브랜치     main
+프레임워크 사전 설정 없음(None)
+빌드 명령           exit 0
+빌드 출력 디렉터리  web
+루트 디렉터리       비워 둠
+```
+
+첫 배포가 끝나면 `설정 → 변수 및 비밀 → 추가`에서 `GEMINI_API_KEY`를
+Secret(암호화)으로 저장하고 다시 배포한다. 모델을 바꿀 때만 일반 변수
+`GEMINI_MODEL`을 추가한다. 기본값은 `gemini-3.6-flash`다.
+
+```bash
+npm run pages:dev       # Cloudflare Pages 로컬 실행
+npm run pages:deploy    # Git 연동 없이 Wrangler로 직접 배포할 때만
+```
+
+기관 자료를 외부 AI로 전송해도 되는지 먼저 확인해야 한다. 기본 Pages 주소는 공개되므로
+실사용 전에는 Cloudflare Access 등으로 기관 사용자만 접속하게 제한하는 것이 좋다.
 
 ### 현재 범위와 다음 단계
 
@@ -115,8 +145,8 @@ npm run read -- samples/         # 폴더째 넣어도 된다
         → 한 화면에서 검토하고 업무용 엑셀로 전달
 ```
 
-로컬 웹 서버는 동작하지만 Cloudflare Pages 배포 코드는 아직 없다. 배포 단계에서는
-정적 화면을 Pages에 두고, API 키가 필요한 판독을 Pages Functions로 옮겨야 한다.
+Cloudflare Pages에서는 정적 화면을 `web/`에서 제공하고, API 키가 필요한 판독은
+`functions/api/`의 Pages Functions에서 수행한다. API 키는 브라우저에 전달되지 않는다.
 
 새 컴퓨터에서 여는 절차는 [docs/SETUP.md](docs/SETUP.md).
 
@@ -138,6 +168,8 @@ lib/
 scripts/read.ts      실행 진입점
 scripts/web.ts       로컬 웹 서버와 판독 API
 web/                 드래그 앤 드롭 화면
+functions/api/       Cloudflare Pages 판독·상태 API
+wrangler.jsonc       Pages 로컬 실행·배포 설정
 ```
 
 새 기기가 들어오면 `lib/templates/` 에 JSON 하나 추가하면 된다.
