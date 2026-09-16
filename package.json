@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "read": "tsx scripts/read.ts",
+    "dev": "tsx scripts/web.ts",
+    "test": "tsx scripts/test-network.ts",
     "typecheck": "tsc --noEmit"
   },
   "engines": {

@@ -12,6 +12,7 @@ node_modules/
 # 빌드
 .next/
 out/
+outputs/
 build/
 dist/
 .vercel

@@ -2,7 +2,7 @@
   "id": "tntp-result",
   "name": "자동분석기 T-N · T-P 결과표",
   "purpose": "read",
-  "hint": "제목에 All Methods. 표 머리가 Order / SID / T-NOD / T-N / T-NRef./Target / T-POD / T-P / T-PRef./Target",
+  "hint": "제목에 All Methods. 표 머리가 Order / SID 또는 SIDNeedle 1 / T-NOD / T-N / T-POD / T-P. 일부 구형 출력에는 Ref./Target 열도 있다",
 
   "columns": [
     { "key": "tn",       "label": "T-N" },
@@ -15,14 +15,16 @@
     "표의 모든 줄을 위에서 아래 순서 그대로 읽어라.",
     "",
     "  no              Order 칸의 번호. 비연속이니 임의로 메우지 마라",
-    "  name            SID 칸의 글자를 보이는 그대로",
+    "  name            SID 또는 SIDNeedle 1 칸의 글자를 보이는 그대로",
     "  cells.tn        T-N 칸의 값",
     "  cells.tp        T-P 칸의 값",
-    "  cells.tnTarget  T-NRef./Target 칸의 값. 비어 있으면 null",
-    "  cells.tpTarget  T-PRef./Target 칸의 값. 비어 있으면 null",
+    "  cells.tnTarget  T-NRef./Target 칸이 있을 때만 그 값. 열이 없거나 비어 있으면 null",
+    "  cells.tpTarget  T-PRef./Target 칸이 있을 때만 그 값. 열이 없거나 비어 있으면 null",
     "",
     "주의: SID 가 \"유출\" 처럼 지명 없이 짧게 적힌 줄이 있다.",
-    "앞줄에서 추측해 채우지 말고 보이는 그대로 적어라."
+    "앞줄에서 추측해 채우지 말고 보이는 그대로 적어라.",
+    "측정망 출력에서는 1DTNP, 1, 2DTNP, 2처럼 두 줄이 한 시료를 이룬다.",
+    "두 줄을 여기서 합치지 말고 각각 별도 행으로 보이는 그대로 읽어라."
   ],
 
   "maps": [
