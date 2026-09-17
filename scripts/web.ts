@@ -11,7 +11,7 @@ import { GeminiReader } from '../lib/reader/gemini.js'
 import type { DetectResult, ReadResult, Source } from '../lib/reader/index.js'
 import { TEMPLATES, findTemplate } from '../lib/templates/index.js'
 import { prepare } from '../lib/image.js'
-import { buildNetworkRows, createNetworkWorkbook, type NamedReadResult } from '../lib/network-results.js'
+import { createReviewedWorkbook, finalizeBatch, toRawBatchRows, type BatchMode, type RawBatchRow, type ReviewedRow } from '../lib/batch-results.js'
 
 const PORT = Number(process.env.PORT || 3000)
 const PUBLIC_DIR = join(process.cwd(), 'web')
@@ -21,17 +21,25 @@ const MAX_FILES = 20
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])
 
 type UploadFile = {
+  id?: string
   name: string
   mimeType: string
   data: string
 }
 
 type ProcessedFile = {
+  id: string
   name: string
-  status: 'read' | 'skip' | 'unknown'
+  status: 'read' | 'skip' | 'unknown' | 'failed'
   document: string
   reason: string
   rows: number
+  retryable?: boolean
+}
+
+function retryable(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : String(error)
+  return /\b(429|500|502|503|504)\b|UNAVAILABLE|RESOURCE_EXHAUSTED|fetch failed|ECONNRESET|ETIMEDOUT/i.test(text)
 }
 
 function json(response: ServerResponse, status: number, value: unknown) {
@@ -67,7 +75,7 @@ async function cached<T>(path: string, make: () => Promise<T>): Promise<T> {
   return value
 }
 
-async function processUploads(files: UploadFile[]) {
+async function processUploads(files: UploadFile[], requestedMode: BatchMode = 'auto') {
   const apiKey = process.env.GEMINI_API_KEY?.trim()
   if (!apiKey) throw new Error('.env.local에 GEMINI_API_KEY가 없습니다.')
   if (!Array.isArray(files) || files.length === 0) throw new Error('처리할 파일을 선택해주세요.')
@@ -77,12 +85,14 @@ async function processUploads(files: UploadFile[]) {
   const reader = new GeminiReader(apiKey, model)
   await mkdir(CACHE_DIR, { recursive: true })
 
-  const readResults: NamedReadResult[] = []
+  const rawRows: RawBatchRow[] = []
   const processed: ProcessedFile[] = []
 
   for (const file of files) {
+    const sourceId = file.id || file.name
     if (!file.name || !ALLOWED_MIME.has(file.mimeType)) {
       processed.push({
+        id: sourceId,
         name: file.name || '이름 없는 파일',
         status: 'unknown',
         document: '지원하지 않는 파일',
@@ -95,6 +105,7 @@ async function processUploads(files: UploadFile[]) {
     const raw = Buffer.from(file.data, 'base64')
     if (!raw.length) {
       processed.push({
+        id: sourceId,
         name: file.name,
         status: 'unknown',
         document: '빈 파일',
@@ -104,64 +115,74 @@ async function processUploads(files: UploadFile[]) {
       continue
     }
 
-    const prepared = await prepare(new Uint8Array(raw), file.mimeType)
-    const source: Source = { bytes: prepared.bytes, mimeType: prepared.mimeType }
-    const detectPath = join(CACHE_DIR, `${cacheKey(raw, model, 'detect')}.detect.json`)
-    const detected = await cached<DetectResult>(detectPath, () => reader.detect(source, TEMPLATES))
-    const template = detected.templateId ? findTemplate(detected.templateId) : undefined
+    try {
+      const prepared = await prepare(new Uint8Array(raw), file.mimeType)
+      const source: Source = { bytes: prepared.bytes, mimeType: prepared.mimeType }
+      const detectPath = join(CACHE_DIR, `${cacheKey(raw, model, 'detect')}.detect.json`)
+      const detected = await cached<DetectResult>(detectPath, () => reader.detect(source, TEMPLATES))
+      const template = detected.templateId ? findTemplate(detected.templateId) : undefined
 
-    if (!template) {
-      processed.push({
-        name: file.name,
-        status: 'unknown',
-        document: '알 수 없는 문서',
-        reason: detected.reason,
-        rows: 0,
-      })
-      continue
-    }
+      if (!template) {
+        processed.push({ id: sourceId, name: file.name, status: 'unknown', document: '알 수 없는 문서', reason: detected.reason, rows: 0 })
+        continue
+      }
 
-    if (template.purpose === 'skip' || template.id !== 'tntp-result') {
+      if (template.purpose === 'skip' || template.id !== 'tntp-result') {
+        processed.push({
+          id: sourceId,
+          name: file.name,
+          status: 'skip',
+          document: template.name,
+          reason: template.purpose === 'skip' ? '측정값 엑셀에 필요하지 않은 문서입니다.' : 'T-N·T-P 결과표가 아닙니다.',
+          rows: 0,
+        })
+        continue
+      }
+
+      const readPath = join(CACHE_DIR, `${cacheKey(raw, model, `read:v2:${template.id}`)}.read.json`)
+      const result = await cached<ReadResult>(readPath, () => reader.read(source, template))
+      rawRows.push(...toRawBatchRows(sourceId, file.name, result))
       processed.push({
+        id: sourceId,
         name: file.name,
-        status: 'skip',
+        status: 'read',
         document: template.name,
-        reason: template.purpose === 'skip' ? '측정값 엑셀에 필요하지 않은 문서입니다.' : 'T-N·T-P 결과표가 아닙니다.',
-        rows: 0,
+        reason: prepared.note ? `판독 완료 · ${prepared.note}` : '판독 완료',
+        rows: result.rows.length,
       })
-      continue
+    } catch (error) {
+      processed.push({
+        id: sourceId,
+        name: file.name,
+        status: 'failed',
+        document: '판독 실패',
+        reason: error instanceof Error ? error.message : String(error),
+        rows: 0,
+        retryable: retryable(error),
+      })
     }
-
-    const readPath = join(CACHE_DIR, `${cacheKey(raw, model, `read:${template.id}`)}.read.json`)
-    const result = await cached<ReadResult>(readPath, () => reader.read(source, template))
-    readResults.push({ fileName: file.name, result })
-    processed.push({
-      name: file.name,
-      status: 'read',
-      document: template.name,
-      reason: prepared.note ? `판독 완료 · ${prepared.note}` : '판독 완료',
-      rows: result.rows.length,
-    })
   }
 
-  const rows = buildNetworkRows(readResults)
-  const workbook = await createNetworkWorkbook(rows)
+  const finalized = await finalizeBatch(rawRows, requestedMode)
   const now = new Date()
   const date = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-')
 
   return {
     model,
+    mode: finalized.mode,
     files: processed,
-    rows,
+    rawRows,
+    rows: finalized.rows,
+    reviewRows: finalized.reviewRows,
     summary: {
       readFiles: processed.filter((file) => file.status === 'read').length,
       skippedFiles: processed.filter((file) => file.status === 'skip').length,
       unknownFiles: processed.filter((file) => file.status === 'unknown').length,
-      completeSamples: rows.filter((row) => row.dtn !== null && row.tn !== null && row.dtp !== null && row.tp !== null).length,
-      warningSamples: rows.filter((row) => row.warnings.length > 0).length,
+      failedFiles: processed.filter((file) => file.status === 'failed').length,
+      ...finalized.summary,
     },
-    workbookBase64: workbook.toString('base64'),
-    workbookName: `측정망_TN_TP_${date}.xlsx`,
+    workbookBase64: finalized.workbook?.toString('base64') ?? null,
+    workbookName: finalized.workbook ? `측정망_TN_TP_${date}.xlsx` : null,
   }
 }
 
@@ -177,9 +198,36 @@ const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', `http://${request.headers.host ?? `localhost:${PORT}`}`)
 
     if (request.method === 'POST' && url.pathname === '/api/process') {
-      const payload = JSON.parse((await body(request)).toString('utf8')) as { files?: UploadFile[] }
-      const result = await processUploads(payload.files ?? [])
+      const payload = JSON.parse((await body(request)).toString('utf8')) as { files?: UploadFile[]; mode?: BatchMode }
+      const result = await processUploads(payload.files ?? [], payload.mode)
       json(response, 200, result)
+      return
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/finalize') {
+      const payload = JSON.parse((await body(request)).toString('utf8')) as { rawRows?: RawBatchRow[]; mode?: BatchMode }
+      const finalized = await finalizeBatch(Array.isArray(payload.rawRows) ? payload.rawRows : [], payload.mode)
+      const date = new Date().toISOString().slice(0, 10)
+      json(response, 200, {
+        mode: finalized.mode,
+        rows: finalized.rows,
+        reviewRows: finalized.reviewRows,
+        summary: finalized.summary,
+        workbookBase64: finalized.workbook?.toString('base64') ?? null,
+        workbookName: finalized.workbook ? `측정망_TN_TP_${date}.xlsx` : null,
+      })
+      return
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/export') {
+      const payload = JSON.parse((await body(request)).toString('utf8')) as { rows?: ReviewedRow[] }
+      const result = await createReviewedWorkbook(Array.isArray(payload.rows) ? payload.rows : [])
+      const date = new Date().toISOString().slice(0, 10)
+      json(response, 200, {
+        workbookBase64: result.buffer.toString('base64'),
+        workbookName: `기타시료_TN_TP_${date}.xlsx`,
+        rows: result.rows,
+      })
       return
     }
 

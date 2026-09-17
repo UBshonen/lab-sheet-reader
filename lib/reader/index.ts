@@ -26,6 +26,11 @@ export type ReadRow = {
    * 모델이 스스로 신고한 것이라, 값은 넣되 사람이 봐야 한다는 표시다.
    */
   uncertain?: string[]
+  /** T-N·T-P 결과표에서 AI가 제안한 시료 묶음. 최종 확정은 사용자가 한다. */
+  suggestedNo?: string | null
+  suggestedName?: string | null
+  sampleKind?: 'dissolved' | 'total' | 'control' | 'unknown'
+  matchReason?: string | null
 }
 
 /** 실제로 얼마나 썼는지. 유료 전환 판단의 근거가 된다 */
