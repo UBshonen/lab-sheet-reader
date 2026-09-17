@@ -11,6 +11,7 @@ import { GeminiReader } from '../lib/reader/gemini.js'
 import type { DetectResult, ReadResult, Source } from '../lib/reader/index.js'
 import { TEMPLATES, findTemplate } from '../lib/templates/index.js'
 import { prepare } from '../lib/image.js'
+import { splitPdfPages } from '../lib/pdf-pages.js'
 import { createReviewedWorkbook, finalizeBatch, toRawBatchRows, type BatchMode, type RawBatchRow, type ReviewedRow } from '../lib/batch-results.js'
 
 const PORT = Number(process.env.PORT || 3000)
@@ -117,39 +118,68 @@ async function processUploads(files: UploadFile[], requestedMode: BatchMode = 'a
 
     try {
       const prepared = await prepare(new Uint8Array(raw), file.mimeType)
-      const source: Source = { bytes: prepared.bytes, mimeType: prepared.mimeType }
-      const detectPath = join(CACHE_DIR, `${cacheKey(raw, model, 'detect')}.detect.json`)
-      const detected = await cached<DetectResult>(detectPath, () => reader.detect(source, TEMPLATES))
-      const template = detected.templateId ? findTemplate(detected.templateId) : undefined
+      const isPdf = prepared.mimeType === 'application/pdf'
+      const pages = isPdf ? await splitPdfPages(prepared.bytes) : [{ number: 1, bytes: prepared.bytes }]
+      const fileRows: RawBatchRow[] = []
+      let resultPages = 0
+      let skippedPages = 0
+      let unknownPages = 0
 
-      if (!template) {
-        processed.push({ id: sourceId, name: file.name, status: 'unknown', document: '알 수 없는 문서', reason: detected.reason, rows: 0 })
-        continue
+      for (const page of pages) {
+        const source: Source = { bytes: page.bytes, mimeType: prepared.mimeType }
+        const keyBytes = isPdf ? page.bytes : raw
+        const detectPath = join(CACHE_DIR, `${cacheKey(keyBytes, model, 'detect')}.detect.json`)
+        const detected = await cached<DetectResult>(detectPath, () => reader.detect(source, TEMPLATES))
+        const template = detected.templateId ? findTemplate(detected.templateId) : undefined
+
+        if (!template) {
+          unknownPages++
+          continue
+        }
+        if (template.purpose === 'skip' || template.id !== 'tntp-result') {
+          skippedPages++
+          continue
+        }
+
+        const readPath = join(CACHE_DIR, `${cacheKey(keyBytes, model, `read:v2:${template.id}`)}.read.json`)
+        const result = await cached<ReadResult>(readPath, () => reader.read(source, template))
+        if (!result.rows.length) throw new Error(`${page.number}쪽 결과표에서 행을 읽지 못했습니다.`)
+        const pageLabel = isPdf ? `${file.name} (${page.number}쪽)` : file.name
+        fileRows.push(...toRawBatchRows(sourceId, pageLabel, result).map((row) => ({
+          ...row,
+          id: isPdf ? `${sourceId}:page${page.number}:${row.id}` : row.id,
+        })))
+        resultPages++
       }
 
-      if (template.purpose === 'skip' || template.id !== 'tntp-result') {
+      // 한 쪽이라도 판독에 실패하면 불완전한 결과를 성공으로 내보내지 않는다.
+      if (isPdf && unknownPages) throw new Error(`${unknownPages}쪽의 문서 종류를 확인하지 못했습니다. 원본 PDF를 확인해주세요.`)
+      if (!isPdf && unknownPages) {
+        processed.push({ id: sourceId, name: file.name, status: 'unknown', document: '알 수 없는 문서', reason: 'T-N·T-P 결과표가 아닙니다.', rows: 0 })
+        continue
+      }
+      if (resultPages) {
+        rawRows.push(...fileRows)
+        processed.push({
+          id: sourceId,
+          name: file.name,
+          status: 'read',
+          document: '자동분석기 T-N · T-P 결과표',
+          reason: isPdf
+            ? `PDF ${pages.length}쪽 중 결과표 ${resultPages}쪽·검량선 ${skippedPages}쪽 판독 완료`
+            : prepared.note ? `판독 완료 · ${prepared.note}` : '판독 완료',
+          rows: fileRows.length,
+        })
+      } else {
         processed.push({
           id: sourceId,
           name: file.name,
           status: 'skip',
-          document: template.name,
-          reason: template.purpose === 'skip' ? '측정값 엑셀에 필요하지 않은 문서입니다.' : 'T-N·T-P 결과표가 아닙니다.',
+          document: '자동분석기 검량선',
+          reason: `결과표 없이 검량선 ${skippedPages}쪽만 있습니다.`,
           rows: 0,
         })
-        continue
       }
-
-      const readPath = join(CACHE_DIR, `${cacheKey(raw, model, `read:v2:${template.id}`)}.read.json`)
-      const result = await cached<ReadResult>(readPath, () => reader.read(source, template))
-      rawRows.push(...toRawBatchRows(sourceId, file.name, result))
-      processed.push({
-        id: sourceId,
-        name: file.name,
-        status: 'read',
-        document: template.name,
-        reason: prepared.note ? `판독 완료 · ${prepared.note}` : '판독 완료',
-        rows: result.rows.length,
-      })
     } catch (error) {
       processed.push({
         id: sourceId,

@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import ExcelJS from 'exceljs'
+import { PDFDocument } from 'pdf-lib'
 import { buildNetworkRows, createNetworkWorkbook } from '../lib/network-results.js'
 import { createReviewedWorkbook, finalizeBatch, isNetworkBatch, toRawBatchRows } from '../lib/batch-results.js'
+import { splitPdfPages } from '../lib/pdf-pages.js'
 import type { ReadResult, ReadRow } from '../lib/reader/index.js'
 
 const row = (name: string, tn: string, tp: string): ReadRow => ({
@@ -9,6 +11,14 @@ const row = (name: string, tn: string, tp: string): ReadRow => ({
   name,
   cells: { tn, tp, tnTarget: null, tpTarget: null },
 })
+
+const sourcePdf = await PDFDocument.create()
+sourcePdf.addPage([595, 842])
+sourcePdf.addPage([595, 842])
+sourcePdf.addPage([595, 842])
+const separated = await splitPdfPages(await sourcePdf.save())
+assert.equal(separated.length, 3)
+for (const page of separated) assert.equal((await PDFDocument.load(page.bytes)).getPageCount(), 1)
 
 const result = (rows: ReadRow[]): ReadResult => ({
   templateId: 'tntp-result',

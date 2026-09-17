@@ -2,7 +2,7 @@
   "id": "tntp-result",
   "name": "자동분석기 T-N · T-P 결과표",
   "purpose": "read",
-  "hint": "제목에 All Methods. 표 머리가 Order / SID 또는 SIDNeedle 1 / T-NOD / T-N / T-POD / T-P. 일부 구형 출력에는 Ref./Target 열도 있다",
+  "hint": "제목에 All Methods가 있거나, 이어지는 결과표 페이지라 제목 없이 표 머리만 있다. 표 머리는 Order / SID 또는 SIDNeedle 1 / T-NOD / T-N / T-POD / T-P. 일부 구형 출력에는 Ref./Target 열도 있다",
 
   "columns": [
     { "key": "tn",       "label": "T-N" },

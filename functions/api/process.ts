@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer'
 import { GoogleGenAI } from '@google/genai'
 import { finalizeBatch, toRawBatchRows, type BatchMode, type RawBatchRow } from '../../lib/batch-results.js'
+import { splitPdfPages } from '../../lib/pdf-pages.js'
 import type { ReadResult } from '../../lib/reader/index.js'
 
 type Env = {
@@ -81,7 +82,8 @@ PDF는 여러 페이지일 수 있고 결과표와 검량선이 한 파일에 �
 - reason에는 전체 페이지 중 결과표와 검량선이 각각 몇 페이지인지 적어라.
 
 문서 종류:
-- result: 제목에 All Methods가 있고 표 머리가 Order / SID 또는 SIDNeedle 1 / T-NOD / T-N / T-POD / T-P인 결과표
+- result: 제목에 All Methods가 있고 표 머리가 Order / SID 또는 SIDNeedle 1 / T-NOD / T-N / T-POD / T-P인 결과표.
+  이어지는 페이지는 제목 없이 같은 표 머리만 있어도 result로 판별하라.
 - calibration: 제목에 Calibration과 T-N 또는 T-P가 있고 검량선 그래프가 있는 문서
 - other: 위 둘이 아닌 문서
 
@@ -229,19 +231,46 @@ export async function onRequestPost(context: Context): Promise<Response> {
       }
 
       try {
-        const { answer, attempts } = await analyze(ai, model, file)
-        if (answer.documentType === 'result') {
-          const result = asReadResult(answer)
-          rawRows.push(...toRawBatchRows(sourceId, file.name, result))
+        const isPdf = file.mimeType === 'application/pdf'
+        const pages = isPdf
+          ? await splitPdfPages(Buffer.from(file.data, 'base64'))
+          : [{ number: 1, bytes: Buffer.from(file.data, 'base64') }]
+        const fileRows: RawBatchRow[] = []
+        let resultPages = 0
+        let calibrationPages = 0
+        let otherPages = 0
+        let attempts = 0
+        for (const page of pages) {
+          const part = { ...file, data: Buffer.from(page.bytes).toString('base64') }
+          const analyzed = await analyze(ai, model, part)
+          const answer = analyzed.answer
+          attempts += analyzed.attempts
+          if (answer.documentType === 'result') {
+            if (!answer.rows.length) throw new Error(`${page.number}쪽 결과표에서 행을 읽지 못했습니다.`)
+            const pageLabel = isPdf ? `${file.name} (${page.number}쪽)` : file.name
+            fileRows.push(...toRawBatchRows(sourceId, pageLabel, asReadResult(answer)).map((row) => ({
+              ...row,
+              id: isPdf ? `${sourceId}:page${page.number}:${row.id}` : row.id,
+            })))
+            resultPages++
+          } else if (answer.documentType === 'calibration') calibrationPages++
+          else otherPages++
+        }
+
+        if (isPdf && otherPages) throw new Error(`${otherPages}쪽의 문서 종류를 확인하지 못했습니다. 원본 PDF를 확인해주세요.`)
+        if (resultPages) {
+          rawRows.push(...fileRows)
           processed.push({
             id: sourceId,
             name: file.name,
             status: 'read',
             document: '자동분석기 T-N · T-P 결과표',
-            reason: `${answer.reason || '판독 완료'}${attempts > 1 ? ` · ${attempts}회 시도 후 성공` : ''}`,
-            rows: answer.rows.length,
+            reason: isPdf
+              ? `PDF ${pages.length}쪽 중 결과표 ${resultPages}쪽·검량선 ${calibrationPages}쪽 판독 완료${attempts > pages.length ? ` · 총 ${attempts}회 시도` : ''}`
+              : `판독 완료${attempts > 1 ? ` · ${attempts}회 시도 후 성공` : ''}`,
+            rows: fileRows.length,
           })
-        } else if (answer.documentType === 'calibration') {
+        } else if (calibrationPages) {
           processed.push({
             id: sourceId,
             name: file.name,
@@ -256,7 +285,7 @@ export async function onRequestPost(context: Context): Promise<Response> {
             name: file.name,
             status: 'unknown',
             document: '알 수 없는 문서',
-            reason: answer.reason || 'T-N·T-P 결과표가 아닙니다.',
+            reason: 'T-N·T-P 결과표가 아닙니다.',
             rows: 0,
           })
         }
