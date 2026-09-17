@@ -2,6 +2,7 @@ import { Buffer } from 'node:buffer'
 import { GoogleGenAI } from '@google/genai'
 import { finalizeBatch, toRawBatchRows, type BatchMode, type RawBatchRow } from '../../lib/batch-results.js'
 import { splitPdfPages } from '../../lib/pdf-pages.js'
+import { classifyGeminiError, DEFAULT_GEMINI_MODEL, type GeminiFailureCode } from '../../lib/gemini-error.js'
 import type { ReadResult } from '../../lib/reader/index.js'
 
 type Env = {
@@ -132,23 +133,6 @@ function asReadResult(answer: ModelAnswer): ReadResult {
   }
 }
 
-function retryable(error: unknown): boolean {
-  const text = error instanceof Error ? error.message : JSON.stringify(error)
-  return /\b(429|500|502|503|504)\b|UNAVAILABLE|RESOURCE_EXHAUSTED|fetch failed|ECONNRESET|ETIMEDOUT/i.test(text)
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    try {
-      const parsed = JSON.parse(error.message) as { error?: { message?: string } }
-      return parsed.error?.message || error.message
-    } catch {
-      return error.message
-    }
-  }
-  return String(error)
-}
-
 async function analyze(ai: GoogleGenAI, model: string, file: UploadFile): Promise<{ answer: ModelAnswer; attempts: number }> {
   let lastError: unknown
   const waits = [0, 2_000, 6_000]
@@ -175,7 +159,7 @@ async function analyze(ai: GoogleGenAI, model: string, file: UploadFile): Promis
       return { answer: JSON.parse(result.text) as ModelAnswer, attempts: attempt + 1 }
     } catch (error) {
       lastError = error
-      if (!retryable(error)) throw error
+      if (!classifyGeminiError(error).retryable) throw error
     }
   }
   throw lastError
@@ -191,7 +175,7 @@ export async function onRequestPost(context: Context): Promise<Response> {
     if (!files.length) return response({ error: '처리할 파일을 선택해주세요.' }, 400)
     if (files.length > MAX_FILES) return response({ error: `한 번에 ${MAX_FILES}개 파일까지 처리할 수 있습니다.` }, 400)
 
-    const model = context.env.GEMINI_MODEL?.trim() || 'gemini-3.6-flash'
+    const model = context.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL
     const ai = new GoogleGenAI({ apiKey: key })
     const rawRows: RawBatchRow[] = []
     const processed: Array<{
@@ -202,6 +186,7 @@ export async function onRequestPost(context: Context): Promise<Response> {
       reason: string
       rows: number
       retryable?: boolean
+      failureCode?: GeminiFailureCode
     }> = []
 
     // 무료 API 한도와 재시도 폭주를 피하려고 한 장씩 처리한다.
@@ -290,14 +275,16 @@ export async function onRequestPost(context: Context): Promise<Response> {
           })
         }
       } catch (error) {
+        const failure = classifyGeminiError(error)
         processed.push({
           id: sourceId,
           name: file.name,
           status: 'failed',
           document: '판독 실패',
-          reason: errorMessage(error),
+          reason: failure.message,
           rows: 0,
-          retryable: retryable(error),
+          retryable: failure.retryable,
+          failureCode: failure.code,
         })
       }
     }

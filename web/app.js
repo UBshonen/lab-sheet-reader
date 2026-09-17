@@ -20,6 +20,7 @@ const reviewDocumentList = document.querySelector('#reviewDocumentList')
 const reviewExportButton = document.querySelector('#reviewExportButton')
 const reviewConfirm = document.querySelector('#reviewConfirm')
 const retryCard = document.querySelector('#retryCard')
+const retryTitle = document.querySelector('#retryTitle')
 const retryButton = document.querySelector('#retryButton')
 const failedMessage = document.querySelector('#failedMessage')
 const connection = document.querySelector('#connection')
@@ -310,13 +311,34 @@ function renderReview(data) {
 function showRetry(documents) {
   const failed = documents.filter((file) => file.status === 'failed')
   retryCard.classList.toggle('hidden', failed.length === 0)
-  failedMessage.textContent = failed.length ? `${failed.length}개: ${failed.map((file) => file.name).join(', ')}` : ''
+  if (!failed.length) return
+  const names = `${failed.length}개: ${failed.map((file) => file.name).join(', ')}`
+  if (failed.some((file) => file.failureCode === 'daily_quota')) {
+    retryTitle.textContent = '오늘의 AI 판독 한도에 도달했습니다'
+    failedMessage.textContent = '하루 한도가 초기화된 뒤 다시 판독해주세요. ' + names
+  } else if (failed.some((file) => file.failureCode === 'minute_limit')) {
+    retryTitle.textContent = '분당 AI 요청 한도에 도달했습니다'
+    failedMessage.textContent = '약 1분 뒤 실패한 파일을 다시 시도해주세요. ' + names
+  } else if (failed.some((file) => file.failureCode === 'rate_limit')) {
+    retryTitle.textContent = 'AI 사용 한도에 도달했습니다'
+    failedMessage.textContent = '분당·하루 한도 중 무엇인지 확인되지 않았습니다. 잠시 후 재시도하고, 계속 실패하면 Google AI Studio 사용량을 확인해주세요. ' + names
+  } else if (failed.some((file) => file.failureCode === 'service_unavailable')) {
+    retryTitle.textContent = 'AI 서비스가 일시적으로 혼잡합니다'
+    failedMessage.textContent = '잠시 후 실패한 파일을 다시 시도해주세요. ' + names
+  } else {
+    retryTitle.textContent = '일부 파일을 끝까지 읽지 못했습니다'
+    failedMessage.textContent = names
+  }
+  const retryable = failed.filter((file) => file.retryable)
+  retryButton.classList.toggle('hidden', retryable.length === 0)
+  retryButton.textContent = retryable.length < failed.length ? '일시 오류 파일만 다시 시도' : '실패한 파일만 다시 시도'
 }
 
 function renderOutcome(data) {
   showRetry(analysis.documents)
   if (data.mode === 'network') renderNetwork(data)
   else renderReview(data)
+  if (analysis.documents.some((file) => file.status === 'failed')) retryCard.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function showWorkflow(mode) {
@@ -376,7 +398,7 @@ async function processFiles(targetFiles = files, merge = false) {
 }
 
 async function retryFailedFiles() {
-  const failedIds = new Set(analysis.documents.filter((file) => file.status === 'failed').map((file) => file.id))
+  const failedIds = new Set(analysis.documents.filter((file) => file.status === 'failed' && file.retryable).map((file) => file.id))
   const targets = files.filter((file) => failedIds.has(fileId(file)))
   if (!targets.length) {
     showError('다시 시도할 원본 파일을 찾지 못했습니다. 파일을 다시 선택해주세요.')

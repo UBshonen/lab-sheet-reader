@@ -22,6 +22,7 @@ import { checkQc } from '../lib/qc.js'
 import { checkRules } from '../lib/rules.js'
 import { prepare } from '../lib/image.js'
 import { writeWorkbook } from '../lib/export.js'
+import { DEFAULT_GEMINI_MODEL } from '../lib/gemini-error.js'
 
 const CACHE_DIR = '.cache'
 
@@ -35,11 +36,14 @@ const MIME: Record<string, string> = {
 }
 
 /**
- * 100만 토큰당 달러. gemini-3.6-flash 도입 가격 기준.
- * 2027년 1월부터 오르므로 그때 고칠 것.
- * 무료 티어에서는 청구되지 않는다. 유료로 갈지 판단하려고 찍는다.
+ * 2026년 9월 표준 유료 요금, 100만 토큰당 달러.
+ * 무료 티어에서는 청구되지 않는다. 지원하지 않는 모델은 비용을 추정하지 않는다.
  */
-const PRICE = { in: 0.75, out: 3.75 }
+const PRICES: Record<string, { in: number; out: number }> = {
+  'gemini-3.5-flash-lite': { in: 0.30, out: 2.50 },
+  'gemini-3.1-flash-lite': { in: 0.25, out: 1.50 },
+  'gemini-3.6-flash': { in: 0.75, out: 3.75 },
+}
 const KRW = 1400
 
 function cached<T>(path: string, make: () => Promise<T>): Promise<T> {
@@ -78,8 +82,10 @@ function collect(args: string[]): string[] {
   return out
 }
 
-const money = (u: Usage) =>
-  Math.round(((u.inputTokens * PRICE.in + u.outputTokens * PRICE.out) / 1_000_000) * KRW)
+const money = (u: Usage, model: string) => {
+  const price = PRICES[model]
+  return price ? Math.round(((u.inputTokens * price.in + u.outputTokens * price.out) / 1_000_000) * KRW) : null
+}
 
 async function main() {
   const argv = process.argv.slice(2)
@@ -104,7 +110,7 @@ async function main() {
     process.exit(1)
   }
 
-  const model = process.env.GEMINI_MODEL?.trim() || 'gemini-3.6-flash'
+  const model = process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL
   const reader = new GeminiReader(key, model)
   reader.onRetry = (sec, tries) =>
     console.log(`  붐벼서 ${sec}초 뒤 다시 시도합니다 (${tries}/3)`)
@@ -178,10 +184,11 @@ async function main() {
   }
 
   console.log('─'.repeat(72))
+  const estimate = money(totals, model)
   console.log(
     `합계  입력 ${totals.inputTokens.toLocaleString()} · 출력 ${totals.outputTokens.toLocaleString()}` +
       (totals.thinkingTokens ? ` (답 ${totals.answerTokens!.toLocaleString()} + 생각 ${totals.thinkingTokens.toLocaleString()})` : '') +
-      `   유료 기준 약 ${money(totals)}원`,
+      (estimate === null ? '' : `   유료 기준 약 ${estimate}원`),
   )
 }
 

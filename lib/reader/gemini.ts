@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai'
 import type { Reader, Source, DetectResult, ReadResult, Usage } from './index.js'
 import type { Template } from '../templates/index.js'
+import { classifyGeminiError, DEFAULT_GEMINI_MODEL } from '../gemini-error.js'
 
 /** 응답을 정해둔 모양으로만 나오게 강제한다. 안 하면 설명 문장이 섞여 파싱이 흔들린다 */
 const DETECT_SCHEMA = {
@@ -56,11 +57,11 @@ const COMMON_RULES = [
 
 /**
  * 생각 수준. MINIMAL · LOW · MEDIUM · HIGH.
- * 손글씨 판독에서 생각 토큰이 답보다 네 배 넘게 나와 시간을 다 먹었다.
+ * 이전 Gemini 3.6 Flash 시험에서 생각 토큰이 답보다 네 배 넘게 나왔다.
  * 같은 사진으로 재보니 기본값은 3분 34초에 출력 12,211 토큰,
  * LOW 는 1분 32초에 2,625 토큰이었고 결과는 같았다.
- * 표를 읽는 일은 추론이 아니라 보고 옮기는 일이라 생각이 별로 필요 없다.
- * 그래서 LOW 를 기본으로 둔다.
+ * 이 결과를 Lite 모델의 정확도 보장으로 간주하지 않는다.
+ * 표 판독은 주로 보고 옮기는 일이므로 LOW 를 기본으로 둔다.
  */
 const THINKING = process.env.GEMINI_THINKING?.trim() || 'LOW'
 
@@ -69,7 +70,7 @@ export class GeminiReader implements Reader {
   #ai: GoogleGenAI
   #model: string
 
-  constructor(apiKey: string, model = 'gemini-3.6-flash') {
+  constructor(apiKey: string, model = DEFAULT_GEMINI_MODEL) {
     this.#ai = new GoogleGenAI({ apiKey })
     this.#model = model
     this.id = `gemini:${model}`
@@ -89,13 +90,11 @@ export class GeminiReader implements Reader {
   /**
    * 잠깐 뒤에 다시 하면 되는 실패인가.
    *
-   * 503 은 모델이 붐빈다는 뜻이고 429 는 분당 한도를 넘겼다는 뜻이다.
-   * 무료 티어는 우선순위가 낮아 둘 다 자주 겪는다. 네트워크가 끊긴 것도
-   * 대개 일시적이다. 반면 400 · 401 · 404 는 다시 해도 똑같으니 바로 포기한다.
+   * 503/일시적인 분당 제한만 재시도한다. 429 중 하루 한도 초과는
+   * 기다려도 바로 풀리지 않으므로 자동 재시도하지 않는다.
    */
   #retryable(e: unknown): boolean {
-    const s = e instanceof Error ? e.message : String(e)
-    return /\b(429|500|502|503|504)\b|UNAVAILABLE|RESOURCE_EXHAUSTED|fetch failed|ECONNRESET|ETIMEDOUT/i.test(s)
+    return classifyGeminiError(e).retryable
   }
 
   async #call(src: Source, prompt: string, schema: unknown, onWait?: (sec: number, tries: number) => void) {

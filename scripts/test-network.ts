@@ -4,7 +4,16 @@ import { PDFDocument } from 'pdf-lib'
 import { buildNetworkRows, createNetworkWorkbook } from '../lib/network-results.js'
 import { createReviewedWorkbook, finalizeBatch, isNetworkBatch, toRawBatchRows } from '../lib/batch-results.js'
 import { splitPdfPages } from '../lib/pdf-pages.js'
+import { classifyGeminiError, DEFAULT_GEMINI_MODEL } from '../lib/gemini-error.js'
 import type { ReadResult, ReadRow } from '../lib/reader/index.js'
+
+assert.equal(DEFAULT_GEMINI_MODEL, 'gemini-3.5-flash-lite')
+assert.deepEqual(classifyGeminiError(new Error('{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"GenerateRequestsPerDayPerProjectPerModel"}}')).code, 'daily_quota')
+assert.equal(classifyGeminiError(new Error('429 rate_limit_exceeded: requests per minute')).code, 'minute_limit')
+assert.equal(classifyGeminiError(new Error('429 RESOURCE_EXHAUSTED')).code, 'rate_limit')
+assert.equal(classifyGeminiError(new Error('429 RESOURCE_EXHAUSTED')).retryable, true)
+assert.equal(classifyGeminiError(new Error('503 UNAVAILABLE')).code, 'service_unavailable')
+assert.equal(classifyGeminiError(new Error('400 invalid argument')).retryable, false)
 
 const row = (name: string, tn: string, tp: string): ReadRow => ({
   no: null,

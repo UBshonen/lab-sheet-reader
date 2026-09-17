@@ -12,6 +12,7 @@ import type { DetectResult, ReadResult, Source } from '../lib/reader/index.js'
 import { TEMPLATES, findTemplate } from '../lib/templates/index.js'
 import { prepare } from '../lib/image.js'
 import { splitPdfPages } from '../lib/pdf-pages.js'
+import { classifyGeminiError, DEFAULT_GEMINI_MODEL, type GeminiFailureCode } from '../lib/gemini-error.js'
 import { createReviewedWorkbook, finalizeBatch, toRawBatchRows, type BatchMode, type RawBatchRow, type ReviewedRow } from '../lib/batch-results.js'
 
 const PORT = Number(process.env.PORT || 3000)
@@ -36,11 +37,7 @@ type ProcessedFile = {
   reason: string
   rows: number
   retryable?: boolean
-}
-
-function retryable(error: unknown): boolean {
-  const text = error instanceof Error ? error.message : String(error)
-  return /\b(429|500|502|503|504)\b|UNAVAILABLE|RESOURCE_EXHAUSTED|fetch failed|ECONNRESET|ETIMEDOUT/i.test(text)
+  failureCode?: GeminiFailureCode
 }
 
 function json(response: ServerResponse, status: number, value: unknown) {
@@ -82,7 +79,7 @@ async function processUploads(files: UploadFile[], requestedMode: BatchMode = 'a
   if (!Array.isArray(files) || files.length === 0) throw new Error('처리할 파일을 선택해주세요.')
   if (files.length > MAX_FILES) throw new Error(`한 번에 ${MAX_FILES}개 파일까지 처리할 수 있습니다.`)
 
-  const model = process.env.GEMINI_MODEL?.trim() || 'gemini-3.6-flash'
+  const model = process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL
   const reader = new GeminiReader(apiKey, model)
   await mkdir(CACHE_DIR, { recursive: true })
 
@@ -181,14 +178,16 @@ async function processUploads(files: UploadFile[], requestedMode: BatchMode = 'a
         })
       }
     } catch (error) {
+      const failure = classifyGeminiError(error)
       processed.push({
         id: sourceId,
         name: file.name,
         status: 'failed',
         document: '판독 실패',
-        reason: error instanceof Error ? error.message : String(error),
+        reason: failure.message,
         rows: 0,
-        retryable: retryable(error),
+        retryable: failure.retryable,
+        failureCode: failure.code,
       })
     }
   }

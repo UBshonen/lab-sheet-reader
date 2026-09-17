@@ -119,7 +119,7 @@ copy .env.example .env.local
 
 ```text
 GEMINI_API_KEY=...
-GEMINI_MODEL=gemini-3.6-flash
+GEMINI_MODEL=gemini-3.5-flash-lite
 ```
 
 키는 Google AI Studio에서 발급한다.

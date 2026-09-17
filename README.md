@@ -7,9 +7,9 @@
 npm run read -- samples/일지.jpg     # → out/결과.xlsx
 ```
 
-> **상태 — 다시 개발 중인 1차 기능.** 현재는 월별 측정망 T-N·T-P 출력물을
-> 1~36번 시료로 정리하는 흐름만 웹 화면까지 연결했다. 완성 제품은 아니며,
-> 다음 단계에서 다른 기기의 값도 같은 시료에 합치는 방향으로 확장한다.
+> **상태 — 중단했던 개발을 현장 요청으로 다시 시작한 MVP.** 현재는 월별 측정망
+> T-N·T-P 출력물을 1~36번 시료로 정리하고, 일반 시료는 확인 후 내보낸다.
+> 완성 제품은 아니며, 다음에는 다른 기기의 값도 같은 시료에 합칠 계획이다.
 
 ---
 
@@ -93,9 +93,13 @@ npm run read -- samples/일지.jpg     # → out/결과.xlsx
 ```bash
 npm install
 copy .env.example .env.local     # GEMINI_API_KEY 채우기
-npm run dev                      # http://localhost:3000
+npm run dev                      # http://localhost:3000 (Node 개발서버)
+npm run pages:dev                # http://localhost:8788 (운영과 같은 Pages API)
 npm run read -- samples/         # 폴더째 넣어도 된다
 ```
+
+두 주소 모두 로컬에서 시험할 수 있다. `3000`은 별도 개발 API를 사용하며,
+Cloudflare 배포 전 확인은 운영과 같은 Pages Functions를 쓰는 `8788`을 권장한다.
 
 웹 화면에서는 JPG·PNG·WebP·PDF 여러 개를 끌어놓을 수 있다. 결과표만 읽고
 검량선은 제외한 뒤, `nDTNP`와 `n` 행을 번호로 연결해 1~36 측정망 엑셀을 만든다.
@@ -124,7 +128,10 @@ GitHub 저장소       UBshonen/lab-sheet-reader
 
 첫 배포가 끝나면 `설정 → 변수 및 비밀 → 추가`에서 `GEMINI_API_KEY`를
 Secret(암호화)으로 저장하고 다시 배포한다. 모델을 바꿀 때만 일반 변수
-`GEMINI_MODEL`을 추가한다. 기본값은 `gemini-3.6-flash`다.
+`GEMINI_MODEL`을 추가한다. 기본값은 `gemini-3.5-flash-lite`다.
+운영 화면에서도 한도 초과가 발생하면 실패 파일과 함께 원인을 안내한다.
+일일 한도 초과는 즉시 재시도하지 않으며, 기존 `gemini-3.6-flash`와
+스캔본 판독 정확도를 비교한 뒤 실사용한다.
 
 ```bash
 npm run pages:dev       # Cloudflare Pages 로컬 실행
