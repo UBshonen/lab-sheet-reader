@@ -97,6 +97,14 @@ const otherFinal = await finalizeBatch(otherRaw)
 assert.equal(otherFinal.mode, 'review')
 assert.equal(otherFinal.reviewRows.find((item) => item.originalName === 'STD 1')?.include, false)
 
+const unknownGeneral = toRawBatchRows('c', 'general.jpg', result([
+  { ...row('품곡천', '2.129', '0.051'), sampleKind: 'unknown' },
+  { ...row('보은 26-하-11', '2.6675', '0.0265'), sampleKind: 'unknown' },
+]))
+const unknownGeneralFinal = await finalizeBatch(unknownGeneral, 'review')
+assert.ok(unknownGeneralFinal.reviewRows.every((item) => item.sampleKind === 'total'))
+assert.ok(unknownGeneralFinal.reviewRows.every((item) => item.include))
+
 const reviewed = otherFinal.reviewRows.map((item) => ({
   ...item,
   finalNo: item.originalName.includes('민원A') ? 'A' : item.originalName.includes('민원B') ? 'B' : '',
@@ -113,10 +121,13 @@ await assert.rejects(
   createReviewedWorkbook(reviewed.map((item) => item.originalName === '민원A' ? { ...item, finalNo: '' } : item)),
   /최종 No와 시료명/,
 )
-await assert.rejects(
-  createReviewedWorkbook(reviewed.map((item) => item.originalName === '민원A' ? { ...item, sampleKind: 'unknown' as const } : item)),
-  /시료 구분/,
-)
+const unknownWorkbook = await createReviewedWorkbook(reviewed.map((item) => item.originalName === '민원A-DTNP'
+  ? { ...item, include: false }
+  : item.originalName === '민원A'
+    ? { ...item, sampleKind: 'unknown' as const }
+    : item))
+assert.ok(unknownWorkbook.rows.find((item) => item.no === 'A')?.warnings.some((warning) => warning.includes('확인 필요')))
+assert.equal(unknownWorkbook.rows.find((item) => item.no === 'A')?.tn, 1.3)
 await assert.rejects(
   createReviewedWorkbook([...reviewed, { ...reviewed[0]!, id: 'duplicate' }]),
   /중복/,

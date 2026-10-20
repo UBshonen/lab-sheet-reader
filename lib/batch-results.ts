@@ -110,12 +110,26 @@ function hasOnlyNetworkSids(rows: RawBatchRow[]): boolean {
 }
 
 export function toReviewRows(rows: RawBatchRow[]): ReviewRow[] {
-  return rows.map((row) => ({
-    ...row,
-    include: row.sampleKind !== 'control',
-    finalNo: row.sampleKind === 'control' ? '' : row.suggestedNo,
-    finalSampleName: row.sampleKind === 'control' ? '' : row.suggestedName,
-  }))
+  return rows.map((row) => {
+    // 일반 시료 모드에서는 AI가 구분을 확신하지 못해 unknown을 반환하더라도
+    // SID의 명확한 표기 규칙을 우선한다. DTNP가 아니고 품질관리도 아니면 총값이다.
+    const sampleKind = row.sampleKind === 'unknown' ? fallbackKind(row.originalName) : row.sampleKind
+    const control = sampleKind === 'control'
+    return {
+      ...row,
+      sampleKind,
+      matchReason: row.sampleKind === 'unknown' && sampleKind !== 'unknown'
+        ? sampleKind === 'dissolved'
+          ? 'SID의 DTNP 표시로 용존값 자동 분류'
+          : sampleKind === 'total'
+            ? '일반 시료 화면에서 DTNP 표시가 없는 SID를 총값으로 자동 분류'
+            : 'SID 표시로 품질관리 행 자동 분류'
+        : row.matchReason,
+      include: !control,
+      finalNo: control ? '' : row.suggestedNo,
+      finalSampleName: control ? '' : row.suggestedName,
+    }
+  })
 }
 
 function asNamedResults(rows: RawBatchRow[]): NamedReadResult[] {
@@ -192,8 +206,8 @@ function reviewedOutput(rows: ReviewedRow[]): OutputRow[] {
   const included = rows.filter((row) => row.include)
   const groups = new Map<string, ReviewedRow[]>()
   for (const row of included) {
-    if (row.sampleKind === 'unknown' || row.sampleKind === 'control') {
-      throw new Error(`'${row.originalName}' 행의 시료 구분을 확인하거나 포함을 해제해주세요.`)
+    if (row.sampleKind === 'control') {
+      throw new Error(`'${row.originalName}' 행은 품질관리로 지정되어 있습니다. 포함을 해제하거나 시료 구분을 변경해주세요.`)
     }
     const no = clean(row.finalNo)
     const name = clean(row.finalSampleName)
@@ -206,7 +220,9 @@ function reviewedOutput(rows: ReviewedRow[]): OutputRow[] {
 
   return [...groups].map(([key, entries]) => {
     const dissolved = entries.filter((row) => row.sampleKind === 'dissolved')
-    const total = entries.filter((row) => row.sampleKind === 'total')
+    // 일반 시료 화면에서 "확인 필요"는 경고일 뿐 내보내기 차단 사유가 아니다.
+    // 용존(DTNP)으로 확정되지 않은 행은 원본 T-N·T-P를 일반(총) 값으로 보낸다.
+    const total = entries.filter((row) => row.sampleKind === 'total' || row.sampleKind === 'unknown')
     const d = dissolved[0]
     const t = total[0]
     const warnings: string[] = []
@@ -218,6 +234,7 @@ function reviewedOutput(rows: ReviewedRow[]): OutputRow[] {
     if (dissolved.length > 1 || total.length > 1) {
       throw new Error(`No '${key}'에 같은 구분의 행이 중복됐습니다. 사용할 행만 포함해주세요.`)
     }
+    if (entries.some((row) => row.sampleKind === 'unknown')) warnings.push('시료 구분이 확인 필요 상태입니다(일반(총) 값으로 내보냄)')
 
     const dtn = value(d?.tn)
     const tn = value(t?.tn)
